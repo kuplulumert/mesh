@@ -27,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  automesh run manifold.stp --dry-run --scenario prism\n"
             "  automesh plan manifold.stp\n"
             "  automesh diagnose fluent-transcript.trn --stage volume\n"
+            "  automesh doctor                   (ortam kontrolü)\n"
             "  automesh gui                      (masaüstü arayüzü)\n"
             "  automesh propose manifold.stp     (ölçümler + mesh kademeleri)\n"
             "  automesh run manifold.stp --level fine\n"
@@ -119,6 +120,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ---- gui -------------------------------------------------------------
     sub.add_parser("gui", help="Masaüstü arayüzünü aç")
+
+    # ---- doctor ----------------------------------------------------------
+    doctor = sub.add_parser("doctor", parents=[common],
+                            help="Ortamı kontrol et (Python, PyFluent, ANSYS, SpaceClaim)")
+    doctor.add_argument("--add-path", metavar="KLASÖR",
+                        help="Bu klasörü kalıcı olarak Python yoluna ekle "
+                             "(her CMD'de set PYTHONPATH yazmaya son)")
 
     # ---- rules / config --------------------------------------------------
     sub.add_parser("rules", help="Teşhis kural tabanını listele")
@@ -305,6 +313,32 @@ def cmd_gui(args: argparse.Namespace) -> int:
     return gui_main()
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from . import doctor as doctor_mod
+
+    if args.add_path:
+        ok, message = doctor_mod.add_path(args.add_path)
+        print(("[+] " if ok else "[x] ") + message)
+        print()
+        if ok:
+            print("Yeni bir komut istemi açıp doğrulayın:")
+            print("  py -c \"import ansys.fluent.core as p; print(p.__version__)\"")
+            print()
+        else:
+            return 2
+
+    ready, lines = doctor_mod.summary()
+    print()
+    for line in lines:
+        print(line)
+    print()
+    if ready:
+        print("Her şey hazır: automesh gui ile başlayabilirsiniz.")
+        return 0
+    print("Eksikler var - yukarıdaki [x] satırlarına bakın.")
+    return 1
+
+
 def cmd_rules(args: argparse.Namespace) -> int:
     from .diagnostics.knowledge_base import RULES
 
@@ -410,6 +444,7 @@ def _print_plan(plan, cfg=None, diagonal=0.0) -> None:
 COMMANDS = {
     "run": cmd_run,
     "gui": cmd_gui,
+    "doctor": cmd_doctor,
     "propose": cmd_propose,
     "analyze": cmd_analyze,
     "plan": cmd_plan,

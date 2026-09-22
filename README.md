@@ -18,6 +18,7 @@ akışa geçme gibi düzeltmeleri kendi uygular ve tekrar dener.
 İki kullanım biçimi var — masaüstü arayüzü ya da tek komut:
 
 ```bat
+automesh doctor                  :: ortam kontrolü - önce bunu çalıştırın
 automesh gui                     :: pencereyi aç, geometriyi tıklayarak seç
 automesh propose manifold.stp    :: ölçümler + seçilebilir mesh kademeleri
 automesh run manifold.scdoc      :: komut satırı
@@ -209,6 +210,34 @@ değerlerle gelir.
 
 ---
 
+## Ortam kontrolü
+
+Kurulum sonrası ilk komut bu olsun:
+
+```bat
+automesh doctor
+```
+
+Python sürümünü, AutoMesh'in nereden yüklendiğini, PyFluent'in bulunup
+bulunmadığını, Tkinter'ı, ANSYS kurulumlarını (`AWP_ROOT*`) ve SpaceClaim'i
+tek ekranda gösterir.
+
+### PyFluent standart olmayan bir klasördeyse
+
+Kurumsal makinelerde PyFluent çoğu zaman `site-packages` yerine ortak bir
+klasöre kurulur (`D:\Work\plm` gibi). O zaman her yeni komut isteminde
+`set PYTHONPATH=...` yazmak gerekir. Bunu kalıcı yapmak için:
+
+```bat
+automesh doctor --add-path D:\Work\plm
+```
+
+Bu, Python'un kendi `site-packages` klasörüne bir `.pth` dosyası yazar;
+Python her açılışta orayı okur. Ortam değişkeni gerekmez, yalnızca o Python
+kurulumunu etkiler ve var olan kayıtlar korunur.
+
+---
+
 ## Hızlı başlangıç
 
 ### 1. Önce kuru çalıştırma (ANSYS gerekmez)
@@ -359,6 +388,7 @@ automesh diagnose fluent-transcript.trn --stage volume
 ## Komut satırı
 
 ```
+automesh doctor                           # ortam kontrolü (+ --add-path ile yol ekle)
 automesh gui                              # masaüstü arayüzü
 automesh propose <geometri>               # ölçümler + seçilebilir mesh kademeleri
 automesh run <geometri> [seçenekler]      # analiz + planla + meshle + raporla
@@ -391,6 +421,8 @@ automesh config -o automesh.json          # örnek konfigürasyon üret
 | `--keep-open` | bitince Fluent'i açık bırak |
 | `--advisor` | bilinmeyen hatalarda Claude'a danış |
 | `--set bölüm.anahtar=değer` | herhangi bir ayarı geçersiz kıl |
+
+`doctor` için: `--add-path <klasör>` kalıcı olarak Python yoluna ekler.
 
 ---
 
@@ -487,6 +519,7 @@ src/automesh/
     advisor.py       Opsiyonel Claude danışmanı
   orchestrator.py    Otonom döngü
   reporting.py       Markdown + JSON rapor
+  doctor.py          Ortam teşhisi ve kalıcı yol ekleme
   cli.py             Komut satırı
   guiapp/
     state.py         Arayüz ayarları, doğrulama, Config'e çevrim (Tk'sız)
@@ -498,7 +531,7 @@ src/automesh/
 Arayüzün mantığı bilerek Tkinter'dan ayrı tutuldu: `state.py` ve `runner.py`
 pencere açmadan test edilebiliyor, `app.py` yalnızca widget yerleşimi.
 
-Testler: `python -m pytest` (154 test, ANSYS ve ekran gerektirmez).
+Testler: `python -m pytest` (166 test, ANSYS ve ekran gerektirmez).
 
 ---
 

@@ -1,5 +1,37 @@
 # Sorun giderme
 
+## Önce: automesh doctor
+
+Ortamla ilgili her sorunda ilk komut bu olsun:
+
+```bat
+automesh doctor
+```
+
+Python, AutoMesh, PyFluent, Tkinter, ANSYS ve SpaceClaim durumunu tek ekranda
+gösterir; `[x]` satırları eksikleri işaretler.
+
+## Her yeni CMD'de PyFluent bulunamıyor
+
+PyFluent standart `site-packages` yerine başka bir klasöre kurulmuşsa Python
+orayı kendiliğinden bilmez; `set PYTHONPATH=...` yalnızca o komut istemi için
+geçerlidir. Kalıcı çözüm:
+
+```bat
+automesh doctor --add-path D:\Work\plm
+```
+
+Python'un `site-packages` klasörüne bir `.pth` dosyası yazar; Python her
+açılışta okur. Yeni bir CMD açıp doğrulayın:
+
+```bat
+py -c "import ansys.fluent.core as p; print(p.__version__)"
+```
+
+Alternatifi `setx PYTHONPATH "D:\Work\plm"` ile kalıcı ortam değişkeni
+yapmaktır, ama o makinedeki **her** Python'u etkiler ve başka projelerde
+çakışma yaratabilir; `.pth` yalnızca o kurulumu etkilediği için tercih edilir.
+
 ## Agent hiç başlamıyor
 
 **`PyFluent kurulu değil`**

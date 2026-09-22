@@ -1,0 +1,181 @@
+"""Ortam teşhisi: neyin kurulu olduğunu ve neyin eksik olduğunu söyler.
+
+Kurumsal makinelerde PyFluent ve ANSYS çoğu zaman standart olmayan yerlere
+kuruluyor.  Bu modül ne bulduğunu tek ekranda gösterir ve eksik yolu kalıcı
+olarak eklemek için ``.pth`` dosyası yazabilir - böylece her yeni komut
+isteminde ``set PYTHONPATH=...`` yazmak gerekmez.
+"""
+
+from __future__ import annotations
+
+import os
+import site
+import sys
+import sysconfig
+from typing import List, Optional, Tuple
+
+#: ``--add-path`` ile yazılan dosyanın adı.
+PTH_NAME = "automesh-extra-paths.pth"
+
+OK = "  [+]"
+WARN = "  [!]"
+FAIL = "  [x]"
+INFO = "      "
+
+
+def _site_packages() -> str:
+    """``.pth`` dosyasının yazılacağı klasör."""
+    path = sysconfig.get_paths().get("purelib") or ""
+    if path and os.path.isdir(path):
+        return path
+    try:
+        user = site.getusersitepackages()
+        if isinstance(user, str):
+            return user
+    except AttributeError:      # pragma: no cover - çok eski Python
+        pass
+    return path
+
+
+def pth_path() -> str:
+    return os.path.join(_site_packages(), PTH_NAME)
+
+
+def existing_extra_paths() -> List[str]:
+    """``.pth`` dosyasında hâlihazırda kayıtlı yollar."""
+    path = pth_path()
+    if not os.path.isfile(path):
+        return []
+    with open(path, "r", encoding="utf-8") as handle:
+        return [line.strip() for line in handle if line.strip()
+                and not line.startswith("#")]
+
+
+def add_path(directory: str) -> Tuple[bool, str]:
+    """``directory``'yi kalıcı olarak ``sys.path``'e ekle.
+
+    ``(başarılı, mesaj)`` döndürür.  Var olan kayıtlar korunur.
+    """
+    directory = os.path.abspath(os.path.expandvars(os.path.expanduser(directory)))
+    if not os.path.isdir(directory):
+        return False, "Klasör bulunamadı: {0}".format(directory)
+
+    target = pth_path()
+    current = existing_extra_paths()
+    if any(os.path.normcase(p) == os.path.normcase(directory) for p in current):
+        return True, "Zaten kayıtlı: {0}".format(directory)
+
+    current.append(directory)
+    try:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(current) + "\n")
+    except OSError as exc:
+        return False, "Yazılamadı ({0}): {1}".format(target, exc)
+    return True, "Eklendi: {0}\n{1}Dosya: {2}".format(directory, INFO, target)
+
+
+# --------------------------------------------------------------------------
+
+def _check_import(module: str) -> Tuple[bool, str]:
+    try:
+        imported = __import__(module, fromlist=["__version__"])
+    except Exception as exc:
+        return False, str(exc)
+    version = getattr(imported, "__version__", "")
+    location = getattr(imported, "__file__", "") or ""
+    return True, "{0}  {1}".format(version, location).strip()
+
+
+def report(lines: Optional[List[str]] = None) -> List[str]:
+    """Ortamın tam dökümü."""
+    out: List[str] = lines if lines is not None else []
+    add = out.append
+
+    add("Python")
+    add("{0} {1}".format(INFO, sys.version.split()[0]))
+    add("{0} {1}".format(INFO, sys.executable))
+    add("")
+
+    add("AutoMesh")
+    ok, detail = _check_import("automesh")
+    add("{0} {1}".format(OK if ok else FAIL, detail if ok else "import edilemiyor"))
+    if not ok:
+        add("{0} Kurulum:  py -m pip install -e <depo klasörü>".format(INFO))
+    add("")
+
+    add("PyFluent (ansys-fluent-core)")
+    ok, detail = _check_import("ansys.fluent.core")
+    if ok:
+        add("{0} {1}".format(OK, detail))
+    else:
+        add("{0} bulunamadı".format(FAIL))
+        add("{0} {1}".format(INFO, detail))
+        add("{0} Kurulum:  py -m pip install ansys-fluent-core".format(INFO))
+        add("{0} Başka bir klasörde kuruluysa:".format(INFO))
+        add("{0}   automesh doctor --add-path D:\\Work\\plm".format(INFO))
+    add("")
+
+    add("Tkinter (arayüz için)")
+    ok, detail = _check_import("tkinter")
+    add("{0} {1}".format(OK if ok else WARN,
+                         "var" if ok else "yok - arayüz açılmaz, CLI çalışır"))
+    add("")
+
+    add("Ek Python yolları (.pth)")
+    extras = existing_extra_paths()
+    if extras:
+        for entry in extras:
+            mark = OK if os.path.isdir(entry) else WARN
+            add("{0} {1}{2}".format(mark, entry,
+                                    "" if os.path.isdir(entry) else "  (klasör yok)"))
+        add("{0} Dosya: {1}".format(INFO, pth_path()))
+    else:
+        add("{0} kayıt yok".format(INFO))
+        add("{0} Yazılacağı yer: {1}".format(INFO, pth_path()))
+    add("")
+
+    add("PYTHONPATH ortam değişkeni")
+    env = os.environ.get("PYTHONPATH", "")
+    if env:
+        for entry in env.split(os.pathsep):
+            if entry.strip():
+                add("{0} {1}".format(INFO, entry))
+        add("{0} Not: bu yalnızca bu komut isteminde geçerli.".format(WARN))
+        add("{0} Kalıcı yapmak için: automesh doctor --add-path <klasör>".format(INFO))
+    else:
+        add("{0} tanımlı değil".format(INFO))
+    add("")
+
+    add("ANSYS kurulumları")
+    roots = sorted((k, v) for k, v in os.environ.items() if k.startswith("AWP_ROOT"))
+    if roots:
+        for key, value in roots:
+            mark = OK if os.path.isdir(value) else WARN
+            add("{0} {1} = {2}".format(mark, key, value))
+    else:
+        add("{0} AWP_ROOT* değişkeni yok - Fluent sürümünü --version-ansys "
+            "ile verin".format(WARN))
+    add("")
+
+    add("SpaceClaim")
+    try:
+        from .geometry.spaceclaim import discover_spaceclaim
+
+        found = discover_spaceclaim()
+    except Exception as exc:       # pragma: no cover - savunma amaçlı
+        found = None
+        add("{0} arama başarısız: {1}".format(WARN, exc))
+    if found:
+        add("{0} {1}  (ScriptAPI {2})".format(OK, found[0], found[1]))
+    else:
+        add("{0} bulunamadı - .scdoc yerine .stp verin ya da".format(WARN))
+        add("{0} geometry.spaceclaim_exe ayarını elle girin".format(INFO))
+    return out
+
+
+def summary() -> Tuple[bool, List[str]]:
+    """``(her şey hazır mı, satırlar)``."""
+    lines = report()
+    ready = _check_import("automesh")[0] and _check_import("ansys.fluent.core")[0]
+    return ready, lines
