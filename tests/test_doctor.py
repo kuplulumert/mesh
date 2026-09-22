@@ -59,8 +59,27 @@ def test_add_path_is_idempotent(tmp_path, monkeypatch):
     doctor.add_path(str(target))
     ok, message = doctor.add_path(str(target))
     assert ok
-    assert "Zaten kayıtlı" in message
+    assert "Güncellendi" in message
     assert len(doctor.existing_extra_paths()) == 1
+
+
+def test_readding_an_existing_path_still_upgrades_the_file(tmp_path, monkeypatch):
+    """Eski düz biçim, yol zaten kayıtlıyken de yenilenmeli.
+
+    Erken dönmek, öncelik düzeltmesinin hiç uygulanmaması demekti.
+    """
+    site_dir = tmp_path / "site-packages"
+    site_dir.mkdir()
+    vendor = tmp_path / "plm"
+    vendor.mkdir()
+    (site_dir / doctor.PTH_NAME).write_text(str(vendor) + "\n", encoding="utf-8")
+    monkeypatch.setattr(doctor, "_site_packages", lambda: str(site_dir))
+
+    ok, _ = doctor.add_path(str(vendor))
+    assert ok
+    content = (site_dir / doctor.PTH_NAME).read_text(encoding="utf-8")
+    assert "sys.path.insert(0" in content
+    assert doctor.existing_extra_paths() == [str(vendor)]
 
 
 def test_add_path_rejects_a_missing_folder(tmp_path, monkeypatch):
@@ -287,3 +306,60 @@ def test_rewriting_upgrades_the_old_format(tmp_path, monkeypatch):
     content = (site_dir / doctor.PTH_NAME).read_text(encoding="utf-8")
     assert "sys.path.insert(0" in content
     assert set(doctor.existing_extra_paths()) == {str(old), str(new)}
+
+
+def _make_fluent_tree(root, complete):
+    """Sahte bir ansys/fluent ağacı kur."""
+    fluent = root / "ansys" / "fluent"
+    core = fluent / "core"
+    core.mkdir(parents=True)
+    if complete:
+        for sub in ("solver", "meshing", "session"):
+            (core / sub).mkdir()
+    return str(fluent)
+
+
+def test_shadowing_names_the_complete_and_broken_copies(tmp_path):
+    broken = _make_fluent_tree(tmp_path / "site-packages", complete=False)
+    good = _make_fluent_tree(tmp_path / "plm", complete=True)
+
+    text = "\n".join(doctor._diagnose_shadowing([broken, good]))
+    assert "eksik kurulum" in text and broken in text
+    assert "tam kurulum" in text and good in text
+    assert "İLK sıra kazanır" in text
+    # Önerilen çözüm hiçbir şey silmemeli - iş bilgisayarında site-packages'e
+    # dokunmak çoğu zaman ne mümkün ne de istenir.
+    assert "--add-path" in text and str(tmp_path / "plm") in text
+    assert "hiçbir şey silinmez" in text
+    assert "--remove-path" in text
+    assert "force-reinstall" not in text
+
+
+def test_shadowing_is_quiet_when_there_is_one_good_copy(tmp_path):
+    good = _make_fluent_tree(tmp_path / "plm", complete=True)
+    text = "\n".join(doctor._diagnose_shadowing([good]))
+    assert "tam kurulum" in text
+    assert "İLK sıra kazanır" not in text
+    assert "--add-path" not in text
+
+
+def test_shadowing_when_every_copy_is_broken(tmp_path):
+    first = _make_fluent_tree(tmp_path / "a", complete=False)
+    second = _make_fluent_tree(tmp_path / "b", complete=False)
+    text = "\n".join(doctor._diagnose_shadowing([first, second]))
+    assert "Hiçbir kopya tam değil" in text
+    # Ortak klasöre kurulum önerilir, site-packages'e dokunulmaz
+    assert "--target" in text
+    assert "force-reinstall" not in text
+
+
+def test_complete_core_detection(tmp_path):
+    good = _make_fluent_tree(tmp_path / "good", complete=True)
+    bad = _make_fluent_tree(tmp_path / "bad", complete=False)
+    assert doctor._has_complete_core(good) == (True, [])
+    ok, missing = doctor._has_complete_core(bad)
+    assert not ok and "solver" in missing
+    # core klasörü hiç yoksa
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert doctor._has_complete_core(str(empty)) == (False, ["core"])

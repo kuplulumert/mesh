@@ -149,6 +149,58 @@ def inspect_pyfluent() -> List[str]:
     return lines
 
 
+def _has_complete_core(fluent_dir: str) -> Tuple[bool, List[str]]:
+    """``<...>/ansys/fluent`` altındaki ``core`` paketi tam mı?"""
+    core = os.path.join(fluent_dir, "core")
+    if not os.path.isdir(core):
+        return False, ["core"]
+    missing = [sub for sub in ("solver", "meshing", "session")
+               if not os.path.isdir(os.path.join(core, sub))
+               and not os.path.isfile(os.path.join(core, sub + ".py"))]
+    return not missing, missing
+
+
+def _diagnose_shadowing(fluent_paths: List[str]) -> List[str]:
+    """Birden fazla ansys kurulumu varsa hangisinin işe yaradığını söyle."""
+    lines: List[str] = []
+    complete: List[str] = []
+    broken: List[str] = []
+    for path in fluent_paths:
+        ok, missing = _has_complete_core(path)
+        if ok:
+            complete.append(path)
+            lines.append("{0} tam kurulum: {1}".format(OK, path))
+        else:
+            broken.append(path)
+            lines.append("{0} eksik kurulum: {1}  (yok: {2})".format(
+                WARN, path, ", ".join(missing)))
+
+    if len(fluent_paths) > 1:
+        lines.append("{0} Birden fazla ansys kurulumu var; listedeki İLK sıra "
+                     "kazanır.".format(WARN))
+
+    if complete and broken:
+        # Önerilen yol hiçbir şeyi silmez: tam kurulumu sys.path'in başına
+        # alır, eksik kopya olduğu yerde kalır.  Kurumsal makinelerde
+        # site-packages'e dokunmak çoğu zaman ne mümkün ne de istenir.
+        good_root = os.path.dirname(os.path.dirname(complete[0]))
+        lines.append("{0} Çözüm (hiçbir şey silinmez, geri alınabilir):".format(INFO))
+        lines.append("{0}   automesh doctor --add-path {1}".format(INFO, good_root))
+        lines.append("{0}   Tam kurulum sys.path'in başına alınır; eksik kopya "
+                     "yerinde kalır.".format(INFO))
+        lines.append("{0} Geri almak için: automesh doctor --remove-path {1}".format(
+            INFO, good_root))
+    elif broken and not complete:
+        lines.append("{0} Hiçbir kopya tam değil; eksiksiz bir kurulum "
+                     "gerekiyor.".format(INFO))
+        lines.append("{0} Ortak bir klasöre kurabilirsiniz (site-packages'e "
+                     "dokunmadan):".format(INFO))
+        lines.append("{0}   py -m pip install ansys-fluent-core "
+                     "--target D:\\Work\\plm".format(INFO))
+        lines.append("{0}   automesh doctor --add-path D:\\Work\\plm".format(INFO))
+    return lines
+
+
 def add_path(directory: str) -> Tuple[bool, str]:
     """``directory``'yi kalıcı olarak ``sys.path``'e ekle.
 
@@ -160,19 +212,23 @@ def add_path(directory: str) -> Tuple[bool, str]:
 
     target = pth_path()
     current = existing_extra_paths()
-    if any(os.path.normcase(p) == os.path.normcase(directory) for p in current):
-        return True, "Zaten kayıtlı: {0}".format(directory)
-
-    current.append(directory)
+    already = any(os.path.normcase(p) == os.path.normcase(directory)
+                  for p in current)
+    if not already:
+        current.append(directory)
+    # Zaten kayıtlı olsa bile dosyayı yeniden yazarız: eski sürümün yazdığı
+    # düz biçim yolları sys.path'in sonuna ekliyordu, yenisi başına ekliyor.
+    # Erken dönmek bu yükseltmeyi hiç uygulamamak demekti.
     try:
         os.makedirs(os.path.dirname(target), exist_ok=True)
         with open(target, "w", encoding="utf-8") as handle:
             handle.write(_render_pth(current))
     except OSError as exc:
         return False, "Yazılamadı ({0}): {1}".format(target, exc)
-    return True, "Eklendi: {0}\n{1}Dosya: {2}\n{1}Yol sys.path'in başına " \
+    verb = "Güncellendi" if already else "Eklendi"
+    return True, "{0}: {1}\n{2}Dosya: {3}\n{2}Yol sys.path'in başına " \
                  "eklenir (PYTHONPATH ile aynı öncelik).".format(
-                     directory, INFO, target)
+                     verb, directory, INFO, target)
 
 
 # --------------------------------------------------------------------------
