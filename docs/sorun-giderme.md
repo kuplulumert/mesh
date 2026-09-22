@@ -81,6 +81,31 @@ olarak kaydedip devam eder. Sizin sürümünüzdeki doğru yolu
 `src/automesh/fluent/tui.py` içindeki ilgili fonksiyona ekleyin — düzenlenmesi
 gereken tek dosya orasıdır.
 
+## Arayüz açılmıyor
+
+**`Arayüz için Tkinter gerekli ama bulunamadı`**
+Windows'ta python.org kurulumu Tkinter'ı içerir; Microsoft Store sürümünde
+bazen eksik olur. Çözüm: python.org'dan kurulum yapın ya da mevcut kurulumu
+**Değiştir (Modify)** ile onarıp "tcl/tk and IDLE" kutusunu işaretleyin.
+
+**`AutoMesh.bat` çift tıklayınca pencere açılıp kapanıyor**
+Hata mesajını görmek için komut isteminden çalıştırın:
+
+```bat
+cd /d E:\mesh
+py -m automesh.guiapp
+```
+
+**Arayüz donuyor gibi görünüyor**
+Donmaz — mesh üretimi ayrı bir iş parçacığında koşar. Fluent uzun bir adımda
+(örneğin hacim ağı) takılıysa günlük akışı durur ama pencere yanıt verir.
+İlerlemeyi görmek için "Fluent penceresini göster" kutusunu işaretleyin.
+
+**Durdur'a bastım ama hemen durmadı**
+Durdurma bir sonraki kontrol noktasında devreye girer; Fluent'in o anki adımı
+(örneğin hacim ağı üretimi) yarıda kesilmez. Böylece Fluent düzgün kapatılır
+ve rapor yine yazılır.
+
 ## Çalışmayı tekrar üretmek istiyorum
 
 Her çalışma `journal.py` üretir. Bu, aynı adımları tekrarlayan bir PyFluent

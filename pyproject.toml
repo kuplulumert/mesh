@@ -30,6 +30,10 @@ all = [
 [project.scripts]
 automesh = "automesh.cli:main"
 
+[project.gui-scripts]
+# Windows'ta konsol penceresi açmadan başlatan kısayol.
+automesh-gui = "automesh.guiapp:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

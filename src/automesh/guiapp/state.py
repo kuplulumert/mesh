@@ -1,0 +1,211 @@
+"""GUI durumu: kullanıcı seçimleri, kalıcılık ve Config'e çevrim.
+
+Bu modül bilerek Tkinter'dan bağımsızdır; böylece arayüzün tüm mantığı
+pencere açmadan test edilebilir.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import json
+import os
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+from ..config import Config
+
+#: Ayarların saklandığı yer (kullanıcı profili).
+SETTINGS_DIR = os.path.join(
+    os.environ.get("APPDATA") or os.path.expanduser("~/.config"), "automesh")
+SETTINGS_PATH = os.path.join(SETTINGS_DIR, "gui-settings.json")
+
+WORKFLOWS = ("auto", "watertight", "fault-tolerant")
+FILLS = ("poly-hexcore", "polyhedra", "hexcore", "tetrahedral")
+SCENARIOS = ("clean", "realistic", "dirty", "prism", "memory", "stubborn")
+
+#: Dosya seçme penceresinde gösterilecek formatlar.
+FILE_TYPES = (
+    ("Tüm desteklenen", "*.scdoc *.scdocx *.stp *.step *.x_t *.x_b *.igs *.iges "
+                        "*.stl *.obj *.sat *.prt *.CATPart *.sldprt *.pmdb *.agdb"),
+    ("SpaceClaim", "*.scdoc *.scdocx"),
+    ("STEP", "*.stp *.step"),
+    ("Parasolid", "*.x_t *.x_b"),
+    ("IGES", "*.igs *.iges"),
+    ("Tessellated", "*.stl *.obj *.ply"),
+    ("Tüm dosyalar", "*.*"),
+)
+
+
+@dataclass
+class GuiSettings:
+    """Pencerede görünen her alanın karşılığı."""
+
+    geometry_path: str = ""
+    output_dir: str = ""
+    cores: int = 4
+    workflow: str = "auto"
+    volume_fill: str = "poly-hexcore"
+    max_cells: int = 20_000_000
+    attempts: int = 6
+    length_unit: str = ""              # boş -> dosyadan tespit
+    boundary_layers: bool = True
+    show_fluent_gui: bool = False
+    dry_run: bool = False
+    scenario: str = "realistic"
+    use_advisor: bool = False
+    ansys_version: str = ""
+
+    # Akış bilgisi (opsiyonel, sınır tabakası için)
+    y_plus: str = ""                   # metin: boş bırakılabilsin diye
+    velocity: str = ""
+    density: str = "1.225"
+    viscosity: str = "1.7894e-05"
+    characteristic_length: str = ""
+
+    config_file: str = ""              # ek YAML/JSON konfigürasyon
+
+    # ------------------------------------------------------------------
+    def to_dict(self) -> Dict[str, Any]:
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "GuiSettings":
+        known = {f.name for f in dataclasses.fields(cls)}
+        return cls(**{k: v for k, v in (data or {}).items() if k in known})
+
+    # ------------------------------------------------------------------
+    def save(self, path: str = SETTINGS_PATH) -> None:
+        """Ayarları diske yaz. Yazamazsak sessizce vazgeçeriz - bu bir kolaylık,
+        arayüzün çalışmasının şartı değil."""
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(self.to_dict(), fh, indent=2, ensure_ascii=False)
+        except OSError:
+            pass
+
+    @classmethod
+    def load(cls, path: str = SETTINGS_PATH) -> "GuiSettings":
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                return cls.from_dict(json.load(fh))
+        except (OSError, ValueError):
+            return cls()
+
+    # ------------------------------------------------------------------
+    def validate(self) -> List[str]:
+        """Çalıştırmadan önce kullanıcıya gösterilecek hatalar."""
+        problems: List[str] = []
+        if not self.geometry_path:
+            problems.append("Geometri dosyası seçilmedi.")
+        elif not os.path.isfile(self.geometry_path):
+            problems.append("Geometri dosyası bulunamadı: {0}".format(self.geometry_path))
+        if self.cores < 1:
+            problems.append("Çekirdek sayısı en az 1 olmalı.")
+        if self.attempts < 1:
+            problems.append("Deneme sayısı en az 1 olmalı.")
+        if self.max_cells < 1000:
+            problems.append("Hücre sınırı en az 1000 olmalı.")
+        if self.config_file and not os.path.isfile(self.config_file):
+            problems.append("Konfigürasyon dosyası bulunamadı: {0}".format(self.config_file))
+        for label, value in (("y+", self.y_plus), ("Hız", self.velocity),
+                             ("Yoğunluk", self.density), ("Viskozite", self.viscosity),
+                             ("Karakteristik uzunluk", self.characteristic_length)):
+            if value.strip() and _to_float(value) is None:
+                problems.append("{0} sayı olmalı: {1!r}".format(label, value))
+        if self.y_plus.strip() and not self.velocity.strip():
+            problems.append("y+ hedefi için hız da gerekli (yoksa boş bırakın).")
+        return problems
+
+    # ------------------------------------------------------------------
+    def to_config(self) -> Config:
+        """Seçimleri AutoMesh konfigürasyonuna çevir."""
+        cfg = Config.load(self.config_file) if self.config_file else Config()
+
+        cfg.fluent.processor_count = int(self.cores)
+        cfg.fluent.use_mock = bool(self.dry_run)
+        if self.dry_run:
+            cfg.fluent.mock_scenario = self.scenario
+        if self.show_fluent_gui:
+            cfg.fluent.show_gui = True
+            cfg.fluent.ui_mode = "gui"
+        if self.ansys_version.strip():
+            cfg.fluent.product_version = self.ansys_version.strip()
+
+        cfg.planning.workflow = self.workflow
+        cfg.planning.volume_fill = self.volume_fill
+        cfg.planning.max_cell_count = int(self.max_cells)
+        cfg.planning.boundary_layers = bool(self.boundary_layers)
+        cfg.autonomy.max_attempts = int(self.attempts)
+        cfg.advisor.enabled = bool(self.use_advisor)
+
+        if self.length_unit.strip():
+            cfg.geometry.length_unit = self.length_unit.strip()
+        for attribute, raw in (
+            ("y_plus_target", self.y_plus),
+            ("velocity", self.velocity),
+            ("characteristic_length", self.characteristic_length),
+        ):
+            value = _to_float(raw)
+            if value is not None:
+                setattr(cfg.geometry, attribute, value)
+        for attribute, raw in (("density", self.density), ("viscosity", self.viscosity)):
+            value = _to_float(raw)
+            if value is not None:
+                setattr(cfg.geometry, attribute, value)
+        return cfg
+
+    # ------------------------------------------------------------------
+    def run_directory(self) -> Optional[str]:
+        """Çalışma dizini; boşsa orkestratör kendi tarih damgalı klasörünü kurar."""
+        return self.output_dir.strip() or None
+
+    def equivalent_command(self) -> str:
+        """Aynı işi yapan komut satırı - kullanıcı kopyalayıp saklayabilsin."""
+        parts = ["automesh", "run", _quote(self.geometry_path)]
+        if self.dry_run:
+            parts += ["--dry-run", "--scenario", self.scenario]
+        parts += ["--cores", str(self.cores)]
+        if self.show_fluent_gui:
+            parts.append("--gui")
+        if self.workflow != "auto":
+            parts += ["--workflow", self.workflow]
+        if self.volume_fill != "poly-hexcore":
+            parts += ["--fill", self.volume_fill]
+        if self.max_cells != 20_000_000:
+            parts += ["--max-cells", str(self.max_cells)]
+        if self.attempts != 6:
+            parts += ["--attempts", str(self.attempts)]
+        if not self.boundary_layers:
+            parts.append("--no-boundary-layers")
+        if self.length_unit.strip():
+            parts += ["--unit", self.length_unit.strip()]
+        for flag, raw in (("--y-plus", self.y_plus), ("--velocity", self.velocity),
+                          ("--length", self.characteristic_length)):
+            if raw.strip():
+                parts += [flag, raw.strip()]
+        if self.use_advisor:
+            parts.append("--advisor")
+        if self.ansys_version.strip():
+            parts += ["--version-ansys", self.ansys_version.strip()]
+        if self.config_file.strip():
+            parts += ["--config", _quote(self.config_file.strip())]
+        if self.output_dir.strip():
+            parts += ["--out", _quote(self.output_dir.strip())]
+        return " ".join(parts)
+
+
+# --------------------------------------------------------------------------
+
+def _to_float(raw: str) -> Optional[float]:
+    text = (raw or "").strip().replace(",", ".")
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _quote(path: str) -> str:
+    return '"{0}"'.format(path) if " " in path else path

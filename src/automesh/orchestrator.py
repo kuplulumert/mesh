@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -73,9 +74,13 @@ class AutoMeshAgent:
     """Meshes one geometry, autonomously."""
 
     def __init__(self, geometry_path: str, cfg: Optional[Config] = None,
-                 run_dir: Optional[str] = None) -> None:
+                 run_dir: Optional[str] = None,
+                 cancel_event: Optional[threading.Event] = None) -> None:
         self.geometry_path = os.path.abspath(geometry_path)
         self.cfg = cfg or Config()
+        #: Set from another thread (the GUI's Stop button) to end the run at
+        #: the next checkpoint.  Fluent is still shut down cleanly.
+        self.cancel_event = cancel_event or threading.Event()
         self.run_dir = run_dir or self._make_run_dir()
         self.log = get_logger()
 
@@ -97,6 +102,10 @@ class AutoMeshAgent:
         self._import_geometry_path = self.geometry_path
 
     # ------------------------------------------------------------------
+    def _check_cancelled(self) -> None:
+        if self.cancel_event.is_set():
+            raise _Abort("Kullanıcı tarafından durduruldu.")
+
     def _make_run_dir(self) -> str:
         stem = os.path.splitext(os.path.basename(self.geometry_path))[0]
         stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -188,6 +197,7 @@ class AutoMeshAgent:
         last_message = "Hiçbir deneme tamamlanamadı."
 
         for index in range(1, self.cfg.autonomy.max_attempts + 1):
+            self._check_cancelled()
             if time.time() > deadline:
                 return False, "Zaman sınırı ({0} s) aşıldı.".format(
                     self.cfg.autonomy.hard_timeout_s)
@@ -270,6 +280,7 @@ class AutoMeshAgent:
         max_inplace = max(1, self.cfg.autonomy.max_repairs_per_attempt)
 
         for attempt in range(max_inplace + 1):
+            self._check_cancelled()
             with timed(label, self.log) as box:
                 result = call()
             record.steps.append(StepRecord(
@@ -669,5 +680,6 @@ def _coerce_plan_params(operation: str, params: Dict[str, Any]) -> Dict[str, Any
 
 
 def run_agent(geometry_path: str, cfg: Optional[Config] = None,
-              run_dir: Optional[str] = None) -> RunResult:
-    return AutoMeshAgent(geometry_path, cfg, run_dir).run()
+              run_dir: Optional[str] = None,
+              cancel_event: Optional[threading.Event] = None) -> RunResult:
+    return AutoMeshAgent(geometry_path, cfg, run_dir, cancel_event).run()

@@ -7,7 +7,7 @@ import logging
 import os
 import sys
 import time
-from typing import Iterator, Optional
+from typing import Iterator, List, Optional
 
 LOGGER_NAME = "automesh"
 
@@ -44,6 +44,28 @@ def get_logger() -> logging.Logger:
     return logging.getLogger(LOGGER_NAME)
 
 
+#: Handlers that must survive a :func:`setup_logging` call - the GUI attaches
+#: one of these to mirror the log into its own window, and the agent calls
+#: ``setup_logging`` itself when a run starts.
+_PERSISTENT: List[logging.Handler] = []
+
+
+def add_persistent_handler(handler: logging.Handler) -> None:
+    if handler not in _PERSISTENT:
+        _PERSISTENT.append(handler)
+    logger = get_logger()
+    if handler not in logger.handlers:
+        logger.addHandler(handler)
+
+
+def remove_persistent_handler(handler: logging.Handler) -> None:
+    if handler in _PERSISTENT:
+        _PERSISTENT.remove(handler)
+    logger = get_logger()
+    if handler in logger.handlers:
+        logger.removeHandler(handler)
+
+
 def setup_logging(level: str = "info", log_file: Optional[str] = None) -> logging.Logger:
     logger = logging.getLogger(LOGGER_NAME)
     logger.setLevel(_LEVELS.get(str(level).lower(), logging.INFO))
@@ -62,6 +84,9 @@ def setup_logging(level: str = "info", log_file: Optional[str] = None) -> loggin
         )
         file_handler.setLevel(logging.DEBUG)
         logger.addHandler(file_handler)
+
+    for handler in _PERSISTENT:
+        logger.addHandler(handler)
     return logger
 
 

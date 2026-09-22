@@ -15,10 +15,11 @@ akışa geçme gibi düzeltmeleri kendi uygular ve tekrar dener.
                         +--------------------------------------  yetersiz mi?
 ```
 
-Tek komut:
+İki kullanım biçimi var — masaüstü arayüzü ya da tek komut:
 
-```bash
-automesh run manifold.scdoc
+```bat
+automesh gui                     :: pencereyi aç, geometriyi tıklayarak seç
+automesh run manifold.scdoc      :: komut satırı
 ```
 
 ---
@@ -27,16 +28,17 @@ automesh run manifold.scdoc
 
 1. [Ne yapar, ne yapmaz](#ne-yapar-ne-yapmaz)
 2. [Kurulum](#kurulum)
-3. [Hızlı başlangıç](#hızlı-başlangıç)
-4. [Agent nasıl karar veriyor](#agent-nasıl-karar-veriyor)
-5. [Otonom döngü](#otonom-döngü)
-6. [Hata → düzeltme tablosu](#hata--düzeltme-tablosu)
-7. [Komut satırı](#komut-satırı)
-8. [Konfigürasyon](#konfigürasyon)
-9. [Çıktılar](#çıktılar)
-10. [Claude danışmanı (opsiyonel)](#claude-danışmanı-opsiyonel)
-11. [Mimari](#mimari)
-12. [Sınırlar ve bilinen kısıtlar](#sınırlar-ve-bilinen-kısıtlar)
+3. [Arayüz](#arayüz)
+4. [Hızlı başlangıç](#hızlı-başlangıç)
+5. [Agent nasıl karar veriyor](#agent-nasıl-karar-veriyor)
+6. [Otonom döngü](#otonom-döngü)
+7. [Hata → düzeltme tablosu](#hata--düzeltme-tablosu)
+8. [Komut satırı](#komut-satırı)
+9. [Konfigürasyon](#konfigürasyon)
+10. [Çıktılar](#çıktılar)
+11. [Claude danışmanı (opsiyonel)](#claude-danışmanı-opsiyonel)
+12. [Mimari](#mimari)
+13. [Sınırlar ve bilinen kısıtlar](#sınırlar-ve-bilinen-kısıtlar)
 
 ---
 
@@ -79,6 +81,7 @@ Gereksinimler:
 | Bileşen | Sürüm | Zorunlu mu |
 |---|---|---|
 | Python | 3.9+ | evet |
+| Tkinter | Python ile gelir | sadece arayüz için |
 | ANSYS Fluent (Meshing) | 2022R2+ | gerçek mesh için evet |
 | PyFluent (`ansys-fluent-core`) | 0.20+ | gerçek mesh için evet |
 | ANSYS SpaceClaim / Discovery | 2021R1+ | sadece `.scdoc` analizi için |
@@ -95,6 +98,36 @@ python -m pip install -e ".[all]"     # veya: pip install -e .
 Çekirdek kod **yalnızca standart kütüphaneyi** kullanır; yukarıdakiler opsiyoneldir
 ve kurulu olanlar otomatik devreye girer. ANSYS kurulu olmayan bir makinede bile
 `--dry-run` ile her şeyi deneyebilirsiniz.
+
+---
+
+## Arayüz
+
+Komut satırı yazmak istemiyorsanız masaüstü penceresini kullanın:
+
+```bat
+automesh gui
+```
+
+Depo kökündeki **`AutoMesh.bat`** dosyasına çift tıklamak da aynı işi yapar
+(varsa `.venv`'i kendisi bulur).
+
+Pencerede:
+
+| Bölüm | Ne yapar |
+|---|---|
+| **Dosyalar** | Geometriyi Windows'un kendi dosya seçicisiyle seçin; çıktı klasörü ve isteğe bağlı konfigürasyon dosyası da buradan |
+| **Mesh ayarları** | Çekirdek sayısı, akış, hacim doldurma, hücre sınırı, deneme sayısı, birim, prizma açık/kapalı |
+| **Akış bilgisi** | y+, hız, yoğunluk, viskozite, karakteristik uzunluk — doldurursanız ilk katman yüksekliği hesaplanır |
+| **Çalıştırma** | Fluent penceresini göster, prova modu + senaryo, Claude danışmanı, ANSYS sürümü |
+| **Üç düğme** | `1. Geometriyi analiz et` → `2. Planı göster` → `3. Mesh oluştur` |
+| **Günlük** | Agent'ın kararları canlı akar: teşhisler sarı, hatalar kırmızı, başarı yeşil |
+| **Durdur** | Çalışmayı bir sonraki adımda temizce keser; Fluent düzgün kapatılır ve rapor yine yazılır |
+| **Raporu aç / Klasörü aç** | Çalışma bitince etkinleşir |
+| **Komutu kopyala** | Aynı işi yapan `automesh run ...` satırını panoya alır — otomasyona geçerken işe yarar |
+
+Ayarlar kapanışta saklanır, pencereyi bir daha açtığınızda son kullandığınız
+değerlerle gelir.
 
 ---
 
@@ -248,6 +281,7 @@ automesh diagnose fluent-transcript.trn --stage volume
 ## Komut satırı
 
 ```
+automesh gui                              # masaüstü arayüzü
 automesh run <geometri> [seçenekler]      # analiz + planla + meshle + raporla
 automesh plan <geometri>                  # analiz + plan (Fluent açılmaz)
 automesh analyze <geometri>               # sadece geometri metrikleri
@@ -369,9 +403,16 @@ src/automesh/
   orchestrator.py    Otonom döngü
   reporting.py       Markdown + JSON rapor
   cli.py             Komut satırı
+  guiapp/
+    state.py         Arayüz ayarları, doğrulama, Config'e çevrim (Tk'sız)
+    runner.py        İşi arka planda koşturan thread + günlük kuyruğu (Tk'sız)
+    app.py           Tkinter penceresi (ince katman)
 ```
 
-Testler: `python -m pytest` (102 test, ANSYS gerektirmez).
+Arayüzün mantığı bilerek Tkinter'dan ayrı tutuldu: `state.py` ve `runner.py`
+pencere açmadan test edilebiliyor, `app.py` yalnızca widget yerleşimi.
+
+Testler: `python -m pytest` (121 test, ANSYS ve ekran gerektirmez).
 
 ---
 

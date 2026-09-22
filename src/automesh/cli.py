@@ -27,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  automesh run manifold.stp --dry-run --scenario prism\n"
             "  automesh plan manifold.stp\n"
             "  automesh diagnose fluent-transcript.trn --stage volume\n"
+            "  automesh gui                      (masaüstü arayüzü)\n"
         ),
     )
     parser.add_argument("--version", action="version",
@@ -95,6 +96,9 @@ def build_parser() -> argparse.ArgumentParser:
     diagnose.add_argument("logfile", help="Transcript dosyası ('-' ile stdin)")
     diagnose.add_argument("--stage", default="any",
                           choices=("any", "import", "surface", "boundary-layer", "volume"))
+
+    # ---- gui -------------------------------------------------------------
+    sub.add_parser("gui", help="Masaüstü arayüzünü aç")
 
     # ---- rules / config --------------------------------------------------
     sub.add_parser("rules", help="Teşhis kural tabanını listele")
@@ -233,6 +237,12 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_gui(args: argparse.Namespace) -> int:
+    from .guiapp import main as gui_main
+
+    return gui_main()
+
+
 def cmd_rules(args: argparse.Namespace) -> int:
     from .diagnostics.knowledge_base import RULES
 
@@ -311,6 +321,7 @@ def _print_plan(plan) -> None:
 
 COMMANDS = {
     "run": cmd_run,
+    "gui": cmd_gui,
     "analyze": cmd_analyze,
     "plan": cmd_plan,
     "diagnose": cmd_diagnose,
