@@ -1,0 +1,91 @@
+# AutoMesh varsayılan konfigürasyonu
+#
+# Bu dosyayı kopyalayıp düzenleyin, sonra:
+#     automesh run parca.scdoc --config config/default.yaml
+# Tek bir ayarı komut satırından da geçersiz kılabilirsiniz:
+#     automesh run parca.scdoc --set fluent.processor_count=16
+
+fluent:
+  product_version: null      # "24.2.0" gibi; null -> bulunan en yeni sürüm
+  processor_count: 4         # Fluent çekirdek sayısı
+  precision: double          # single | double
+  ui_mode: no_gui            # no_gui | hidden_gui | gui
+  show_gui: false
+  launch_timeout_s: 600
+  cleanup_on_exit: true
+  use_mock: false            # true -> ANSYS olmadan simülasyon (dry-run)
+  mock_scenario: realistic   # clean | realistic | dirty | prism | memory | stubborn
+
+geometry:
+  analyzer: auto             # auto | spaceclaim | step | discrete | fallback
+  spaceclaim_exe: null       # "C:/Program Files/ANSYS Inc/v251/scdm/SpaceClaim.exe"
+  spaceclaim_script_api: "251"
+  spaceclaim_timeout_s: 900
+  export_format: step        # SpaceClaim'in Fluent için yazacağı format
+  length_unit: null          # null -> dosyadan tespit edilir
+
+  # --- akış bilgisi (opsiyonel) -------------------------------------------
+  # Bunlar verilirse ilk prizma katmanı y+ hedefinden hesaplanır.
+  velocity: null             # m/s
+  density: 1.225             # kg/m3
+  viscosity: 1.7894e-05      # Pa.s
+  characteristic_length: null  # m; null -> sınır kutusu köşegeni
+  y_plus_target: null        # 1 (duvara kadar çözüm) veya 30-300 (duvar fonksiyonu)
+  internal_flow: null        # null -> otomatik tespit
+
+planning:
+  workflow: auto             # auto | watertight | fault-tolerant
+  volume_fill: poly-hexcore  # poly-hexcore | polyhedra | hexcore | tetrahedral
+  target_cell_count: 0       # 0 -> serbest
+  max_cell_count: 20000000
+  min_cells_across_feature: 3.0   # en küçük özelliğin üzerine kaç hücre
+  max_size_divisor: 40.0          # basit geometri: köşegen / 40
+  max_size_divisor_complex: 200.0 # karmaşık geometri: köşegen / 200
+  growth_rate_range: [1.15, 1.20]
+  curvature_angle_range: [12.0, 18.0]
+  cells_per_gap_range: [2.0, 3.0]
+  boundary_layers: true
+  layer_count_range: [5, 12]
+  bl_growth_rate: 1.2
+  size_min_max_ratio_cap: 500.0
+
+quality:
+  # Hacim ağı
+  max_skewness_good: 0.80
+  max_skewness_accept: 0.90
+  max_skewness_hard: 0.98
+  min_orthogonal_good: 0.20
+  min_orthogonal_accept: 0.10
+  min_orthogonal_hard: 0.01
+  max_aspect_ratio_accept: 100.0
+  max_aspect_ratio_hard: 1000.0
+  # Yüzey ağı (daha sıkı: kötü yüzey ağı her hacim ağını bozar)
+  surface_max_skewness_good: 0.60
+  surface_max_skewness_accept: 0.80
+  surface_max_skewness_hard: 0.95
+  allow_negative_volume: false
+  allow_left_handed_faces: false
+
+autonomy:
+  max_attempts: 6                 # tam yeniden mesh denemesi
+  max_repairs_per_attempt: 3      # deneme içindeki yerinde onarım sayısı
+  allow_workflow_switch: true
+  allow_boundary_layer_drop: true
+  allow_volume_fill_downgrade: true
+  improve_on_acceptable: true     # "kabul edilebilir" ağa bir cila geçişi daha
+  hard_timeout_s: 7200
+
+advisor:
+  enabled: false                  # true -> bilinmeyen hatalarda Claude'a sor
+  model: claude-opus-5
+  max_tokens: 8000
+  effort: high
+  api_key_env: ANTHROPIC_API_KEY
+  transcript_chars: 20000
+  timeout_s: 180.0
+
+output:
+  run_root: runs
+  mesh_format: msh.h5             # msh.h5 | msh | cas.h5
+  write_intermediate: true
+  keep_transcript: true

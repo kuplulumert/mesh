@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automesh"
+version = "0.1.0"
+description = "SpaceClaim geometrilerini analiz edip ANSYS Fluent Meshing'i otonom olarak süren agent"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "kuplulumert" }]
+dependencies = []
+
+[project.optional-dependencies]
+fluent = ["ansys-fluent-core>=0.20"]
+cad = ["trimesh>=4.0", "numpy>=1.24"]
+advisor = ["anthropic>=1.0"]
+yaml = ["PyYAML>=6.0"]
+dev = ["pytest>=7.0"]
+all = [
+  "ansys-fluent-core>=0.20",
+  "trimesh>=4.0",
+  "numpy>=1.24",
+  "anthropic>=1.0",
+  "PyYAML>=6.0",
+  "pytest>=7.0",
+]
+
+[project.scripts]
+automesh = "automesh.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+automesh = ["geometry/scripts/*.py", "py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,14 @@
+# Boşluklu / üst üste binmiş CAD: doğrudan fault-tolerant akışla başla,
+# daha fazla deneme hakkı ver ve kalite eşiklerini biraz gevşet.
+planning:
+  workflow: fault-tolerant
+  boundary_layers: true
+  layer_count_range: [3, 6]
+
+autonomy:
+  max_attempts: 8
+  max_repairs_per_attempt: 4
+
+quality:
+  max_skewness_accept: 0.93
+  min_orthogonal_accept: 0.08

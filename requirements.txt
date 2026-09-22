@@ -1,0 +1,9 @@
+# Çekirdek çalışma zamanı yalnızca Python standart kütüphanesini kullanır.
+# Aşağıdakiler isteğe bağlıdır; kurulu olanlar otomatik devreye girer.
+
+ansys-fluent-core>=0.20   # Fluent Meshing'i sürmek için (ANSYS kurulumu gerekir)
+PyYAML>=6.0               # YAML konfigürasyon dosyaları (yoksa JSON kullanılır)
+trimesh>=4.0              # STL/OBJ tessellated geometri analizi
+numpy>=1.24               # trimesh bağımlılığı
+anthropic>=1.0            # İsteğe bağlı Claude danışman modülü
+pytest>=7.0               # Testler

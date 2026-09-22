@@ -1,0 +1,19 @@
+# Dış akış (araç/kanat gövdesi) örneği:
+# çevreleyen hava hacmi SpaceClaim'de zaten oluşturulmuş varsayılır.
+geometry:
+  internal_flow: false
+  velocity: 27.8          # 100 km/h
+  density: 1.225
+  viscosity: 1.7894e-05
+  characteristic_length: 4.5
+  y_plus_target: 30       # duvar fonksiyonu
+
+planning:
+  volume_fill: poly-hexcore
+  max_cell_count: 40000000
+  layer_count_range: [8, 15]
+  growth_rate_range: [1.10, 1.15]
+
+quality:
+  max_skewness_accept: 0.85
+  min_orthogonal_accept: 0.15

@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# AutoMesh çalışma çıktıları
+runs/
+*.msh
+*.msh.h5
+*.cas
+*.cas.h5
+*.trn
+cleanup-fluent-*
