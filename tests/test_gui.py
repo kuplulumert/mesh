@@ -251,3 +251,69 @@ def test_cannot_start_twice(step_file, tmp_path):
     finally:
         run.cancel()
         _drain_until_done(run)
+
+
+# --------------------------------------------------------------------------
+# ölçüm ve kademe seçimi
+# --------------------------------------------------------------------------
+
+def test_propose_mode_returns_measurements_and_levels(step_file, tmp_path):
+    settings = GuiSettings(geometry_path=step_file, output_dir=str(tmp_path))
+    run = BackgroundRun(settings, "propose")
+    run.start()
+    logs, _ = _drain_until_done(run)
+
+    assert run.metrics is not None
+    assert len(run.proposals) == 5
+    joined = "\n".join(logs)
+    assert "Köşegen" in joined and "En küçük özellik" in joined
+    # Kademeler kabadan inceye sıralı olmalı
+    cells = [p.cells for p in run.proposals]
+    assert cells == sorted(cells)
+    assert sum(1 for p in run.proposals if p.recommended) == 1
+
+
+def test_choosing_a_level_overrides_the_automatic_sizes(step_file, tmp_path):
+    settings = GuiSettings(geometry_path=step_file, output_dir=str(tmp_path))
+    run = BackgroundRun(settings, "propose")
+    run.start()
+    _drain_until_done(run)
+
+    fine = [p for p in run.proposals if p.key == "fine"][0]
+    settings.chosen_label = fine.label
+    settings.chosen_min_size = fine.plan.min_size
+    settings.chosen_max_size = fine.plan.max_size
+    settings.chosen_cells = fine.cells
+
+    cfg = settings.to_config()
+    assert cfg.planning.override_min_size == pytest.approx(fine.plan.min_size)
+    assert cfg.planning.override_max_size == pytest.approx(fine.plan.max_size)
+
+    # Ve seçim gerçekten meshlenen plana yansımalı
+    from automesh.geometry import analyze_geometry
+    from automesh.planning.sizing import plan_mesh
+
+    metrics = analyze_geometry(step_file, cfg)
+    plan = plan_mesh(metrics, cfg)
+    assert plan.max_size == pytest.approx(fine.plan.max_size)
+    assert any("kullanıcı tarafından" in note for note in plan.notes)
+
+
+def test_choice_survives_widget_collection(step_file):
+    """_collect() widget'lardan yeniden kurar; seçim kaybolmamalı."""
+    settings = GuiSettings(geometry_path=step_file, chosen_label="İnce",
+                           chosen_min_size=0.0004, chosen_max_size=0.001,
+                           chosen_cells=250_000)
+    assert "İnce" in settings.chosen_summary()
+    assert "250,000" in settings.chosen_summary()
+    settings.clear_choice()
+    assert "otomatik" in settings.chosen_summary()
+    assert settings.to_config().planning.override_min_size == 0.0
+
+
+def test_chosen_level_appears_in_the_equivalent_command(step_file):
+    settings = GuiSettings(geometry_path=step_file, chosen_label="Kaba",
+                           chosen_min_size=0.001, chosen_max_size=0.002)
+    command = settings.equivalent_command()
+    assert "--min-size 0.001" in command
+    assert "--max-size 0.002" in command

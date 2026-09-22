@@ -19,6 +19,7 @@ akışa geçme gibi düzeltmeleri kendi uygular ve tekrar dener.
 
 ```bat
 automesh gui                     :: pencereyi aç, geometriyi tıklayarak seç
+automesh propose manifold.stp    :: ölçümler + seçilebilir mesh kademeleri
 automesh run manifold.scdoc      :: komut satırı
 ```
 
@@ -120,11 +121,48 @@ Pencerede:
 | **Mesh ayarları** | Çekirdek sayısı, akış, hacim doldurma, hücre sınırı, deneme sayısı, birim, prizma açık/kapalı |
 | **Akış bilgisi** | y+, hız, yoğunluk, viskozite, karakteristik uzunluk — doldurursanız ilk katman yüksekliği hesaplanır |
 | **Çalıştırma** | Fluent penceresini göster, prova modu + senaryo, Claude danışmanı, ANSYS sürümü |
-| **Üç düğme** | `1. Geometriyi analiz et` → `2. Planı göster` → `3. Mesh oluştur` |
+| **Üç düğme** | `1. Geometriyi analiz et` → `2. Ölçüm ve öneriler` → `3. Mesh oluştur` |
+| **Seçili kademe satırı** | Hangi mesh kademesini seçtiğinizi gösterir; "Seçimi temizle" ile otomatiğe döner |
 | **Günlük** | Agent'ın kararları canlı akar: teşhisler sarı, hatalar kırmızı, başarı yeşil |
 | **Durdur** | Çalışmayı bir sonraki adımda temizce keser; Fluent düzgün kapatılır ve rapor yine yazılır |
 | **Raporu aç / Klasörü aç** | Çalışma bitince etkinleşir |
 | **Komutu kopyala** | Aynı işi yapan `automesh run ...` satırını panoya alır — otomasyona geçerken işe yarar |
+
+### Ölçüm ve öneri ekranı
+
+`2. Ölçüm ve öneriler` düğmesi Fluent'i hiç açmadan geometriyi ölçer ve bir
+seçim penceresi açar:
+
+**Solda ölçülen uzunluklar** — sınır kutusu, köşegen, en küçük özellik, en
+kısa kenar, en küçük eğrilik yarıçapı, en ince kesit, özellik aralığı. Her
+satırın yanında o ölçümün neye yaradığı yazar ("minimum hücre boyutu bunun
+üzerine oturur" gibi).
+
+**Sağda seçilebilir kademeler** — otomatik planın etrafında beş basamak:
+
+| Kademe | Boyut | Ne için |
+|---|---|---|
+| Hızlı önizleme | otomatiğin 2.0 katı | Topolojiyi ve bölgeleri görmek için; CFD'ye uygun değil |
+| Kaba | 1.4 katı | İlk yakınsama denemesi |
+| **Dengeli (önerilen)** | 1.0 | Agent'ın geometriden hesapladığı nokta |
+| İnce | 0.7 katı | Keskin gradyanlar için; ~3 kat hücre |
+| Çok ince | 0.5 katı | Ağ bağımsızlık çalışmasının üst basamağı |
+
+Her satırda min–max hücre boyutu, tahmini hücre sayısı, kaba bellek ihtiyacı
+ve **en küçük özelliğin kaç hücreyle çözüldüğü** görünür. Altta seçtiğiniz
+kademenin gerekçesi ve varsa uyarıları yazar ("En küçük özellik 2 hücreden az
+ile çözülüyor - o detaylar ağda kaybolur", "Tahmini hücre sayısı bütçeyi
+aşıyor").
+
+Seçtiğiniz kademe ana pencerede görünür ve `3. Mesh oluştur` onu kullanır.
+"Otomatiğe bırak" derseniz agent kendi kararıyla devam eder.
+
+Aynı bilgi komut satırında:
+
+```bat
+automesh propose "M:\...\Multicyclone.scdoc"
+automesh run "M:\...\Multicyclone.scdoc" --level fine
+```
 
 Ayarlar kapanışta saklanır, pencereyi bir daha açtığınızda son kullandığınız
 değerlerle gelir.
@@ -282,6 +320,7 @@ automesh diagnose fluent-transcript.trn --stage volume
 
 ```
 automesh gui                              # masaüstü arayüzü
+automesh propose <geometri>               # ölçümler + seçilebilir mesh kademeleri
 automesh run <geometri> [seçenekler]      # analiz + planla + meshle + raporla
 automesh plan <geometri>                  # analiz + plan (Fluent açılmaz)
 automesh analyze <geometri>               # sadece geometri metrikleri
@@ -300,6 +339,9 @@ automesh config -o automesh.json          # örnek konfigürasyon üret
 | `--version-ansys 24.2.0` | ANSYS sürümünü sabitle |
 | `--workflow watertight\|fault-tolerant` | akışı zorla |
 | `--fill poly-hexcore\|polyhedra\|hexcore\|tetrahedral` | hacim doldurma |
+| `--level preview\|coarse\|balanced\|fine\|very_fine` | hazır mesh kademesi |
+| `--min-size 0.4mm`, `--max-size 3mm` | hücre boyutunu elle ver (birim eki opsiyonel) |
+| `--growth 1.12`, `--layers 3` | büyüme oranını / katman sayısını zorla |
 | `--max-cells`, `--target-cells` | hücre bütçesi |
 | `--attempts N` | yeniden deneme sayısı |
 | `--y-plus`, `--velocity`, `--density`, `--viscosity`, `--length` | sınır tabakası için akış bilgisi |
@@ -387,6 +429,7 @@ src/automesh/
     fallback.py      Son çare + Fluent'in sınır kutusundan metrik üretimi
   planning/
     sizing.py        Geometri metrikleri -> MeshPlan (tüm heuristikler burada)
+    proposals.py     Ölçüm tablosu + seçilebilir mesh kademeleri ve gerekçeleri
     adjust.py        Plan üzerinde yapılan tekil düzenlemeler
   fluent/
     driver.py        Soyut sürücü + transcript + çıktı sınıflandırma
@@ -406,13 +449,14 @@ src/automesh/
   guiapp/
     state.py         Arayüz ayarları, doğrulama, Config'e çevrim (Tk'sız)
     runner.py        İşi arka planda koşturan thread + günlük kuyruğu (Tk'sız)
-    app.py           Tkinter penceresi (ince katman)
+    app.py           Tkinter ana penceresi (ince katman)
+    proposals_dialog.py  Ölçüm ve kademe seçme penceresi
 ```
 
 Arayüzün mantığı bilerek Tkinter'dan ayrı tutuldu: `state.py` ve `runner.py`
 pencere açmadan test edilebiliyor, `app.py` yalnızca widget yerleşimi.
 
-Testler: `python -m pytest` (121 test, ANSYS ve ekran gerektirmez).
+Testler: `python -m pytest` (144 test, ANSYS ve ekran gerektirmez).
 
 ---
 
@@ -432,6 +476,8 @@ Testler: `python -m pytest` (121 test, ANSYS ve ekran gerektirmez).
   üretilmiyor; zone isimleri ancak içe aktarmadan sonra bilindiği için bunu
   config'ten vermeniz gerekir.
 - Hücre sayısı tahmini yaklaşık iki kat hata payına sahiptir; bütçe bunu hesaba
-  katarak kabalaştırır.
+  katarak kabalaştırır. Öneri ekranındaki **bellek tahmini de kabadır**
+  (~1.2 GB / milyon hücre) - doldurma tipine, prizma sayısına ve Fluent
+  sürümüne göre değişir.
 - Üretilen mesh **her zaman** raporla birlikte kontrol edilmelidir: agent kalite
   eşiklerini tutturur, mühendislik yeterliliğini değil.

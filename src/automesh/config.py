@@ -105,6 +105,18 @@ class PlanningSettings:
     bl_growth_rate: float = 1.2
     size_min_max_ratio_cap: float = 500.0      # min_size >= max_size / this
 
+    #: Hazır kademe: preview | coarse | balanced | fine | very_fine
+    #: (boş -> agent'ın hesapladığı denge noktası kullanılır)
+    level: str = ""
+
+    # --- kullanıcı dayatmaları (0 / None -> otomatik) --------------------
+    # Arayüzdeki "öneri seç" ekranı ve CLI'daki --min-size/--max-size bunları
+    # doldurur; heuristikler hesaplanır, sonra bunlar üstüne yazılır.
+    override_min_size: float = 0.0             # m
+    override_max_size: float = 0.0             # m
+    override_growth_rate: float = 0.0
+    override_layer_count: int = -1             # -1 -> dokunma
+
 
 @dataclass
 class AutonomySettings:

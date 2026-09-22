@@ -26,7 +26,7 @@ LOG = "log"
 DONE = "done"
 ERROR = "error"
 
-MODES = ("run", "analyze", "plan")
+MODES = ("run", "analyze", "plan", "propose")
 
 
 @dataclass
@@ -64,6 +64,9 @@ class BackgroundRun:
         self.messages: "queue.Queue[Message]" = queue.Queue()
         self.cancel_event = threading.Event()
         self.result: Optional[RunResult] = None
+        #: "propose" modunda doldurulur: (metrics, proposals)
+        self.proposals: Any = None
+        self.metrics: Any = None
         self.error: str = ""
         self._thread: Optional[threading.Thread] = None
         self._handler: Optional[_QueueHandler] = None
@@ -108,6 +111,8 @@ class BackgroundRun:
         try:
             if self.mode == "run":
                 self._do_run()
+            elif self.mode == "propose":
+                self._do_propose()
             else:
                 self._do_inspect()
         except Exception:
@@ -125,6 +130,27 @@ class BackgroundRun:
         self.result = run_agent(
             self.settings.geometry_path, cfg,
             self.settings.run_directory(), self.cancel_event)
+
+    def _do_propose(self) -> None:
+        """Ölçümleri al ve seçilebilir kademeleri üret (Fluent açılmaz)."""
+        from ..geometry import analyze_geometry
+        from ..planning import build_proposals, measurements
+
+        cfg = self.settings.to_config()
+        # Kademeleri üretirken kullanıcının önceki seçimi işe karışmasın.
+        cfg.planning.override_min_size = 0.0
+        cfg.planning.override_max_size = 0.0
+
+        log = logging.getLogger("automesh")
+        self.metrics = analyze_geometry(self.settings.geometry_path, cfg)
+        for row in measurements(self.metrics):
+            note = "   ({0})".format(row.note) if row.note else ""
+            log.info("%-26s %s%s", row.label, row.value, note)
+        for warning in self.metrics.warnings:
+            log.warning("%s", warning)
+        self.proposals = build_proposals(self.metrics, cfg)
+        log.info("%d mesh kademesi hazır - seçim penceresi açılıyor.",
+                 len(self.proposals))
 
     def _do_inspect(self) -> None:
         """Fluent açmadan geometri analizi (ve istenirse plan)."""

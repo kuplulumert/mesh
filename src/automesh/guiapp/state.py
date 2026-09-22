@@ -64,6 +64,12 @@ class GuiSettings:
 
     config_file: str = ""              # ek YAML/JSON konfigürasyon
 
+    # "Ölçüm ve öneriler" ekranından seçilen kademe (boşsa agent kendi seçer)
+    chosen_label: str = ""
+    chosen_min_size: float = 0.0       # m
+    chosen_max_size: float = 0.0       # m
+    chosen_cells: int = 0
+
     # ------------------------------------------------------------------
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
@@ -132,6 +138,10 @@ class GuiSettings:
         if self.ansys_version.strip():
             cfg.fluent.product_version = self.ansys_version.strip()
 
+        if self.chosen_min_size > 0 and self.chosen_max_size > 0:
+            cfg.planning.override_min_size = self.chosen_min_size
+            cfg.planning.override_max_size = self.chosen_max_size
+
         cfg.planning.workflow = self.workflow
         cfg.planning.volume_fill = self.volume_fill
         cfg.planning.max_cell_count = int(self.max_cells)
@@ -190,9 +200,31 @@ class GuiSettings:
             parts += ["--version-ansys", self.ansys_version.strip()]
         if self.config_file.strip():
             parts += ["--config", _quote(self.config_file.strip())]
+        if self.chosen_min_size > 0 and self.chosen_max_size > 0:
+            parts += ["--min-size", "{0:.6g}".format(self.chosen_min_size),
+                      "--max-size", "{0:.6g}".format(self.chosen_max_size)]
         if self.output_dir.strip():
             parts += ["--out", _quote(self.output_dir.strip())]
         return " ".join(parts)
+
+    def chosen_summary(self) -> str:
+        """Ana pencerede gösterilecek tek satırlık seçim özeti."""
+        if not self.chosen_label:
+            return "Mesh kademesi: otomatik (agent geometriden seçecek)"
+        from ..units import format_length
+
+        unit = self.length_unit.strip() or "mm"
+        return "Seçili kademe: {0}  |  {1} - {2}  |  ~{3:,} hücre".format(
+            self.chosen_label,
+            format_length(self.chosen_min_size, unit),
+            format_length(self.chosen_max_size, unit),
+            self.chosen_cells)
+
+    def clear_choice(self) -> None:
+        self.chosen_label = ""
+        self.chosen_min_size = 0.0
+        self.chosen_max_size = 0.0
+        self.chosen_cells = 0
 
 
 # --------------------------------------------------------------------------

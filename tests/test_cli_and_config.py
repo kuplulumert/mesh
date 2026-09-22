@@ -141,3 +141,53 @@ def test_cli_run_flags_reach_the_config(step_file, tmp_path, monkeypatch):
     assert cfg.planning.max_cell_count == 5_000_000
     assert cfg.planning.boundary_layers is False
     assert cfg.advisor.enabled is True
+
+
+def test_parse_length_accepts_units():
+    from automesh.cli import parse_length
+
+    assert parse_length("0.4mm") == pytest.approx(0.0004)
+    assert parse_length("2 mm") == pytest.approx(0.002)
+    assert parse_length("0.0004") == pytest.approx(0.0004)
+    assert parse_length("0.1in") == pytest.approx(0.00254)
+    assert parse_length("1,5mm") == pytest.approx(0.0015)     # Türkçe ondalık
+    with pytest.raises(ValueError):
+        parse_length("mm")
+    with pytest.raises(ValueError):
+        parse_length("")
+
+
+def test_cli_propose_lists_measurements_and_levels(step_file, capsys):
+    assert main(["propose", step_file]) == 0
+    out = capsys.readouterr().out
+    assert "Ölçümler" in out
+    assert "Mesh seçenekleri" in out
+    assert "önerilen" in out
+    assert "--level" in out
+
+
+def test_cli_propose_json(step_file, capsys):
+    assert main(["propose", step_file, "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload["proposals"]) == 5
+    assert payload["measurements"][0]["label"] == "Sınır kutusu"
+
+
+def test_cli_run_level_and_sizes_reach_the_config(step_file, tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run(geometry, cfg, out, cancel=None):
+        captured["cfg"] = cfg
+        from automesh.models import RunResult
+        return RunResult(success=True, run_dir=str(tmp_path), message="ok")
+
+    monkeypatch.setattr("automesh.orchestrator.run_agent", fake_run)
+    main(["run", step_file, "--dry-run", "--level", "fine",
+          "--min-size", "0.3mm", "--max-size", "2mm",
+          "--growth", "1.12", "--layers", "3"])
+    planning = captured["cfg"].planning
+    assert planning.level == "fine"
+    assert planning.override_min_size == pytest.approx(0.0003)
+    assert planning.override_max_size == pytest.approx(0.002)
+    assert planning.override_growth_rate == pytest.approx(1.12)
+    assert planning.override_layer_count == 3

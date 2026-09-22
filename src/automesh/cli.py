@@ -28,6 +28,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  automesh plan manifold.stp\n"
             "  automesh diagnose fluent-transcript.trn --stage volume\n"
             "  automesh gui                      (masaüstü arayüzü)\n"
+            "  automesh propose manifold.stp     (ölçümler + mesh kademeleri)\n"
+            "  automesh run manifold.stp --level fine\n"
         ),
     )
     parser.add_argument("--version", action="version",
@@ -62,6 +64,13 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--fill", choices=("poly-hexcore", "polyhedra", "hexcore",
                                         "tetrahedral"),
                      help="Hacim doldurma tipi")
+    run.add_argument("--level", choices=("preview", "coarse", "balanced", "fine",
+                                        "very_fine"),
+                     help="Hazır mesh kademesi (automesh propose ile listelenir)")
+    run.add_argument("--min-size", help="Minimum hücre boyutu, örn. 0.4mm veya 0.0004")
+    run.add_argument("--max-size", help="Maksimum hücre boyutu, örn. 3mm")
+    run.add_argument("--growth", type=float, help="Büyüme oranını zorla, örn. 1.15")
+    run.add_argument("--layers", type=int, help="Prizma katman sayısını zorla (0 = kapalı)")
     run.add_argument("--max-cells", type=int, help="Hücre sayısı üst sınırı")
     run.add_argument("--target-cells", type=int, help="Hedeflenen hücre sayısı")
     run.add_argument("--attempts", type=int, help="Maksimum yeniden mesh denemesi")
@@ -89,6 +98,12 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--y-plus", type=float)
     plan.add_argument("--velocity", type=float)
     plan.add_argument("--max-cells", type=int)
+
+    propose = sub.add_parser("propose", parents=[common],
+                             help="Ölçümleri ve seçilebilir mesh kademelerini göster")
+    propose.add_argument("geometry")
+    propose.add_argument("--json", action="store_true")
+    propose.add_argument("--max-cells", type=int, help="Hücre bütçesi (uyarı için)")
 
     # ---- diagnose --------------------------------------------------------
     diagnose = sub.add_parser("diagnose", parents=[common],
@@ -134,6 +149,16 @@ def _apply_run_flags(cfg: Config, args: argparse.Namespace) -> Config:
         cfg.planning.workflow = args.workflow
     if args.fill:
         cfg.planning.volume_fill = args.fill
+    if args.level:
+        cfg.planning.level = args.level
+    if args.min_size:
+        cfg.planning.override_min_size = parse_length(args.min_size)
+    if args.max_size:
+        cfg.planning.override_max_size = parse_length(args.max_size)
+    if args.growth:
+        cfg.planning.override_growth_rate = args.growth
+    if args.layers is not None:
+        cfg.planning.override_layer_count = args.layers
     if args.max_cells:
         cfg.planning.max_cell_count = args.max_cells
     if args.target_cells:
@@ -210,6 +235,32 @@ def cmd_plan(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_propose(args: argparse.Namespace) -> int:
+    from .geometry import analyze_geometry
+    from .planning import build_proposals, format_table, measurements
+
+    cfg = _load_config(args)
+    if getattr(args, "max_cells", None):
+        cfg.planning.max_cell_count = args.max_cells
+
+    metrics = analyze_geometry(args.geometry, cfg)
+    proposals = build_proposals(metrics, cfg)
+    if args.json:
+        print(json.dumps({
+            "geometry": metrics.to_dict(),
+            "measurements": [m.__dict__ for m in measurements(metrics)],
+            "proposals": [p.to_dict() for p in proposals],
+        }, indent=2, ensure_ascii=False))
+        return 0
+    print()
+    print(format_table(metrics, proposals))
+    print()
+    print("Seçtiğiniz kademeyle çalıştırmak için:")
+    print('  automesh run "{0}" --level <kademe>'.format(args.geometry))
+    print()
+    return 0
+
+
 def cmd_diagnose(args: argparse.Namespace) -> int:
     from .diagnostics.knowledge_base import diagnose
 
@@ -261,6 +312,30 @@ def cmd_config(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+
+_LENGTH_SUFFIXES = (
+    ("mm", 1.0e-3), ("cm", 1.0e-2), ("um", 1.0e-6), ("nm", 1.0e-9),
+    ("in", 0.0254), ("ft", 0.3048), ("m", 1.0),
+)
+
+
+def parse_length(text: str) -> float:
+    """'0.4mm', '2 mm', '0.0004' -> metre.
+
+    Birimsiz değerler metre sayılır; 'mm' yazmak isteyenin de canı yanmasın
+    diye son ek kabul edilir.
+    """
+    raw = (text or "").strip().lower().replace(",", ".")
+    if not raw:
+        raise ValueError("boş uzunluk değeri")
+    for suffix, factor in _LENGTH_SUFFIXES:
+        if raw.endswith(suffix):
+            number = raw[: -len(suffix)].strip()
+            if not number:
+                raise ValueError("uzunluk değeri eksik: {0!r}".format(text))
+            return float(number) * factor
+    return float(raw)
+
 
 def _print_metrics(metrics) -> None:
     from .units import format_length
@@ -322,6 +397,7 @@ def _print_plan(plan) -> None:
 COMMANDS = {
     "run": cmd_run,
     "gui": cmd_gui,
+    "propose": cmd_propose,
     "analyze": cmd_analyze,
     "plan": cmd_plan,
     "diagnose": cmd_diagnose,

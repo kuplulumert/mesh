@@ -70,6 +70,7 @@ class AutoMeshApp:
         self.var_viscosity = tk.StringVar(value=s.viscosity)
         self.var_length = tk.StringVar(value=s.characteristic_length)
         self.var_status = tk.StringVar(value="Hazır. Bir geometri dosyası seçin.")
+        self.var_choice = tk.StringVar(value=s.chosen_summary())
         self.var_dry_run.trace_add("write", lambda *_: self._on_dry_run_toggled())
 
     # ------------------------------------------------------------------
@@ -79,13 +80,14 @@ class AutoMeshApp:
         outer = ttk.Frame(self.root, padding=PAD)
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(3, weight=1)
+        outer.rowconfigure(4, weight=1)
 
         self._build_files(outer, row=0)
         self._build_options(outer, row=1)
         self._build_buttons(outer, row=2)
-        self._build_log(outer, row=3)
-        self._build_status(outer, row=4)
+        self._build_choice_bar(outer, row=3)
+        self._build_log(outer, row=4)
+        self._build_status(outer, row=5)
 
     # -- dosyalar --------------------------------------------------------
     def _build_files(self, parent: ttk.Frame, row: int) -> None:
@@ -207,8 +209,8 @@ class AutoMeshApp:
                                       command=lambda: self._start("analyze"))
         self.btn_analyze.pack(side="left")
 
-        self.btn_plan = ttk.Button(bar, text="2. Planı göster",
-                                   command=lambda: self._start("plan"))
+        self.btn_plan = ttk.Button(bar, text="2. Ölçüm ve öneriler",
+                                   command=lambda: self._start("propose"))
         self.btn_plan.pack(side="left", padx=(PAD, 0))
 
         self.btn_run = ttk.Button(bar, text="3. Mesh oluştur",
@@ -229,6 +231,15 @@ class AutoMeshApp:
 
         ttk.Button(bar, text="Komutu kopyala",
                    command=self._copy_command).pack(side="right", padx=(0, PAD))
+
+    def _build_choice_bar(self, parent: ttk.Frame, row: int) -> None:
+        bar = ttk.Frame(parent)
+        bar.grid(row=row, column=0, sticky="ew", pady=(0, PAD // 2))
+        bar.columnconfigure(0, weight=1)
+        ttk.Label(bar, textvariable=self.var_choice,
+                  foreground="#1b5e20").grid(row=0, column=0, sticky="w")
+        ttk.Button(bar, text="Seçimi temizle",
+                   command=self._clear_choice).grid(row=0, column=1, sticky="e")
 
     # -- günlük ----------------------------------------------------------
     def _build_log(self, parent: ttk.Frame, row: int) -> None:
@@ -291,6 +302,7 @@ class AutoMeshApp:
     # çalıştırma
     # ------------------------------------------------------------------
     def _collect(self) -> GuiSettings:
+        previous = self.settings
         self.settings = GuiSettings(
             geometry_path=self.var_geometry.get().strip(),
             output_dir=self.var_output.get().strip(),
@@ -312,6 +324,11 @@ class AutoMeshApp:
             density=self.var_density.get().strip(),
             viscosity=self.var_viscosity.get().strip(),
             characteristic_length=self.var_length.get().strip(),
+            # Kademe seçimi widget'larda tutulmuyor; önceki durumdan taşınır.
+            chosen_label=previous.chosen_label,
+            chosen_min_size=previous.chosen_min_size,
+            chosen_max_size=previous.chosen_max_size,
+            chosen_cells=previous.chosen_cells,
         )
         return self.settings
 
@@ -328,7 +345,7 @@ class AutoMeshApp:
 
         self._clear_log()
         label = {"analyze": "Geometri analizi", "plan": "Plan hesaplama",
-                 "run": "Mesh oluşturma"}[mode]
+                 "propose": "Ölçüm ve öneriler", "run": "Mesh oluşturma"}[mode]
         self._append("=== {0} başlıyor ===".format(label), "OK")
         if mode == "run" and settings.dry_run:
             self._append(
@@ -373,6 +390,8 @@ class AutoMeshApp:
                     self._append(message.text, "ERROR")
                 elif message.kind == DONE:
                     self._finish(message.result)
+                    if self.run is not None and self.run.mode == "propose":
+                        self._show_proposals()
         self.root.after(150, self._pump)
 
     def _finish(self, result) -> None:
@@ -404,6 +423,35 @@ class AutoMeshApp:
     # ------------------------------------------------------------------
     # günlük penceresi
     # ------------------------------------------------------------------
+    def _show_proposals(self) -> None:
+        """Ölçüm/öneri penceresini aç ve seçimi kaydet."""
+        run = self.run
+        if run is None or not run.proposals:
+            return
+        from .proposals_dialog import ProposalDialog
+
+        chosen = ProposalDialog(self.root, run.metrics, run.proposals).show()
+        if chosen is None:
+            self._append("Kademe seçilmedi - boyutlandırma otomatik kalıyor.", "INFO")
+            self._clear_choice()
+            return
+        self.settings.chosen_label = chosen.label
+        self.settings.chosen_min_size = chosen.plan.min_size
+        self.settings.chosen_max_size = chosen.plan.max_size
+        self.settings.chosen_cells = chosen.cells
+        self.settings.save()
+        self.var_choice.set(self.settings.chosen_summary())
+        self._append("Seçilen kademe: {0} ({1}, ~{2} hücre)".format(
+            chosen.label, chosen.size_text(), chosen.cells_text()), "OK")
+        for warning in chosen.warnings:
+            self._append("! " + warning, "WARNING")
+        self._append("Şimdi '3. Mesh oluştur' ile devam edebilirsiniz.", "INFO")
+        self.var_status.set("Kademe seçildi: {0}".format(chosen.label))
+
+    def _clear_choice(self) -> None:
+        self.settings.clear_choice()
+        self.var_choice.set(self.settings.chosen_summary())
+
     def _append(self, text: str, tag: str = "INFO") -> None:
         self.text.configure(state="normal")
         self.text.insert("end", text + "\n", tag)

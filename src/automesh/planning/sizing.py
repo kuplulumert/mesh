@@ -100,6 +100,11 @@ def plan_mesh(metrics: GeometryMetrics, cfg: Config) -> MeshPlan:
     # ---- boundary layers ----------------------------------------------
     plan.boundary_layer = plan_boundary_layer(metrics, cfg, plan, complexity)
 
+    # ---- kullanıcı dayatmaları ----------------------------------------
+    # Heuristikler her zaman çalışır; kullanıcı yalnızca sonucun üstüne
+    # yazar.  Böylece rapor, seçilen değerin neyin yerine geçtiğini gösterir.
+    _apply_overrides(plan, cfg)
+
     # ---- budget --------------------------------------------------------
     plan.estimated_cell_count = estimate_cell_count(plan, metrics)
     _apply_cell_budget(plan, metrics, cfg)
@@ -118,6 +123,49 @@ def plan_mesh(metrics: GeometryMetrics, cfg: Config) -> MeshPlan:
 
 
 # --------------------------------------------------------------------------
+
+def _apply_overrides(plan: MeshPlan, cfg: Config) -> None:
+    """Kullanıcının seçtiği kademeyi ve değerleri planın üstüne yaz."""
+    planning = cfg.planning
+
+    level = (planning.level or "").strip().lower()
+    if level:
+        from .proposals import LEVELS
+
+        scales = {key: (label, scale) for key, label, scale, _ in LEVELS}
+        if level not in scales:
+            raise ValueError(
+                "bilinmeyen kademe {0!r}; seçenekler: {1}".format(
+                    level, ", ".join(scales)))
+        label, scale = scales[level]
+        if scale != 1.0:
+            plan.min_size *= scale
+            plan.max_size *= scale
+            plan.max_cell_length = plan.max_size
+        plan.note("'{0}' kademesi seçildi (otomatik boyutun {1:.2f} katı).".format(
+            label, scale))
+    if planning.override_max_size and planning.override_max_size > 0:
+        plan.note("Maksimum boyut kullanıcı tarafından {0:.4g} m olarak verildi "
+                  "(otomatik: {1:.4g} m).".format(planning.override_max_size,
+                                                  plan.max_size))
+        plan.max_size = planning.override_max_size
+        plan.max_cell_length = plan.max_size
+    if planning.override_min_size and planning.override_min_size > 0:
+        plan.note("Minimum boyut kullanıcı tarafından {0:.4g} m olarak verildi "
+                  "(otomatik: {1:.4g} m).".format(planning.override_min_size,
+                                                  plan.min_size))
+        plan.min_size = planning.override_min_size
+    if planning.override_growth_rate and planning.override_growth_rate > 0:
+        plan.note("Büyüme oranı kullanıcı tarafından {0:.3f} olarak verildi.".format(
+            planning.override_growth_rate))
+        plan.growth_rate = planning.override_growth_rate
+    if planning.override_layer_count is not None and planning.override_layer_count >= 0:
+        plan.note("Prizma katman sayısı kullanıcı tarafından {0} olarak verildi "
+                  "(otomatik: {1}).".format(planning.override_layer_count,
+                                            plan.boundary_layer.layer_count))
+        plan.boundary_layer.layer_count = int(planning.override_layer_count)
+        plan.boundary_layer.enabled = planning.override_layer_count > 0
+
 
 def _min_size_for(metrics: GeometryMetrics, cfg: Config, max_size: float) -> float:
     """Smallest cell: enough to resolve the smallest real feature."""
