@@ -236,6 +236,10 @@ Bu, Python'un kendi `site-packages` klasörüne bir `.pth` dosyası yazar;
 Python her açılışta orayı okur. Ortam değişkeni gerekmez, yalnızca o Python
 kurulumunu etkiler ve var olan kayıtlar korunur.
 
+Yazılan dosya yolu `sys.path`'in **başına** ekler - `PYTHONPATH` ile aynı
+öncelik. Düz bir yol listesi yazmak yetmez, çünkü `site` modülü onları en
+sona ekler ve aynı paketin yarım bir kopyası daha önce geliyorsa kazanır.
+
 ---
 
 ## Hızlı başlangıç
@@ -532,7 +536,7 @@ src/automesh/
 Arayüzün mantığı bilerek Tkinter'dan ayrı tutuldu: `state.py` ve `runner.py`
 pencere açmadan test edilebiliyor, `app.py` yalnızca widget yerleşimi.
 
-Testler: `python -m pytest` (172 test, ANSYS ve ekran gerektirmez).
+Testler: `python -m pytest` (176 test, ANSYS ve ekran gerektirmez).
 
 ---
 

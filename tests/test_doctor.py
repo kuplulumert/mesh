@@ -210,3 +210,80 @@ def test_cli_doctor_remove_path(tmp_path, monkeypatch, capsys):
     capsys.readouterr()
     main(["doctor", "--remove-path", str(vendor)])
     assert "Çıkarıldı" in capsys.readouterr().out
+
+
+def test_pth_line_puts_paths_first_like_pythonpath(tmp_path, monkeypatch):
+    """Düz yol listesi sys.path'in SONUNA eklenir; bu yetmiyor.
+
+    Aynı paketin yarım bir kopyası daha önce geliyorsa düz liste
+    çalışmaz. Üretilen satır yolu PYTHONPATH gibi başa almalı.
+    """
+    import sys
+
+    site_dir = tmp_path / "site-packages"
+    site_dir.mkdir()
+    vendor = tmp_path / "plm"
+    vendor.mkdir()
+    monkeypatch.setattr(doctor, "_site_packages", lambda: str(site_dir))
+    doctor.add_path(str(vendor))
+
+    content = (site_dir / doctor.PTH_NAME).read_text(encoding="utf-8")
+    exec_lines = [l for l in content.splitlines() if l.startswith("import ")]
+    assert len(exec_lines) == 1
+
+    original = list(sys.path)
+    try:
+        exec(exec_lines[0], {})          # site modülünün yaptığının aynısı
+        assert sys.path[0] == str(vendor)
+        exec(exec_lines[0], {})          # iki kez çalışsa da tek kayıt
+        assert sys.path.count(str(vendor)) == 1
+    finally:
+        sys.path[:] = original
+
+
+def test_pth_skips_folders_that_disappeared(tmp_path, monkeypatch):
+    """Klasör sonradan silinirse satır sessizce atlamalı, patlamamalı."""
+    import sys
+
+    site_dir = tmp_path / "site-packages"
+    site_dir.mkdir()
+    vendor = tmp_path / "gidecek"
+    vendor.mkdir()
+    monkeypatch.setattr(doctor, "_site_packages", lambda: str(site_dir))
+    doctor.add_path(str(vendor))
+    vendor.rmdir()
+
+    line = [l for l in (site_dir / doctor.PTH_NAME).read_text(
+        encoding="utf-8").splitlines() if l.startswith("import ")][0]
+    original = list(sys.path)
+    try:
+        exec(line, {})
+        assert str(vendor) not in sys.path
+    finally:
+        sys.path[:] = original
+
+
+def test_old_plain_format_is_still_readable(tmp_path, monkeypatch):
+    """Önceki sürümün yazdığı düz listeler kaybolmamalı."""
+    site_dir = tmp_path / "site-packages"
+    site_dir.mkdir()
+    (site_dir / doctor.PTH_NAME).write_text(
+        "D:\\Work\\plm\nC:\\baska\n", encoding="utf-8")
+    monkeypatch.setattr(doctor, "_site_packages", lambda: str(site_dir))
+    assert doctor.existing_extra_paths() == ["D:\\Work\\plm", "C:\\baska"]
+
+
+def test_rewriting_upgrades_the_old_format(tmp_path, monkeypatch):
+    site_dir = tmp_path / "site-packages"
+    site_dir.mkdir()
+    old = tmp_path / "eski"
+    old.mkdir()
+    new = tmp_path / "yeni"
+    new.mkdir()
+    (site_dir / doctor.PTH_NAME).write_text(str(old) + "\n", encoding="utf-8")
+    monkeypatch.setattr(doctor, "_site_packages", lambda: str(site_dir))
+
+    doctor.add_path(str(new))
+    content = (site_dir / doctor.PTH_NAME).read_text(encoding="utf-8")
+    assert "sys.path.insert(0" in content
+    assert set(doctor.existing_extra_paths()) == {str(old), str(new)}

@@ -22,7 +22,15 @@ automesh doctor --add-path D:\Work\plm
 ```
 
 Python'un `site-packages` klasörüne bir `.pth` dosyası yazar; Python her
-açılışta okur. Yeni bir CMD açıp doğrulayın:
+açılışta okur.
+
+Yazılan dosya yolu `sys.path`'in **başına** ekler, tıpkı `PYTHONPATH` gibi.
+Bu önemli: `site` modülü düz yol listelerini `sys.path`'in **sonuna** ekler,
+dolayısıyla aynı paketin yarım bir kopyası daha önce geliyorsa düz liste
+işe yaramaz. `--target` ile kurulmuş PyFluent kurulumlarında tam olarak bu
+olur.
+
+Yeni bir CMD açıp doğrulayın:
 
 ```bat
 py -c "import ansys.fluent.core as p; print(p.__version__)"
@@ -53,9 +61,18 @@ automesh doctor --remove-path D:\Work\plm
 automesh doctor
 ```
 
-Kurumsal ağda pip PyPI'ye erişemiyorsa (proxy/sertifika hatası) BT'den
-`ansys-fluent-core` paketini iç depodan kurmasını isteyin; yarım bir kopyayı
-yola eklemek çalışmaz.
+PyFluent ortak bir klasöre `--target` ile kurulduysa kurulumun **tam**
+olduğundan emin olun:
+
+```bat
+py -m pip install ansys-fluent-core --target "D:\Work\plm" --no-cache-dir
+automesh doctor
+```
+
+`--target` kurulumları `site-packages`'e kaydolmaz; o yüzden klasörü
+`automesh doctor --add-path` ile bir kez kaydetmek gerekir. Kurumsal ağda pip
+PyPI'ye erişemiyorsa (proxy/sertifika hatası) BT'den `ansys-fluent-core`
+paketini iç depodan kurmasını isteyin.
 
 ## Agent hiç başlamıyor
 

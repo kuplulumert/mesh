@@ -41,14 +41,49 @@ def pth_path() -> str:
     return os.path.join(_site_packages(), PTH_NAME)
 
 
+#: ``.pth`` dosyasında yolları işaretleyen yorum satırı.
+_MARKER = "# path: "
+
+
+def _render_pth(paths: List[str]) -> str:
+    """``.pth`` dosyasının içeriğini üret.
+
+    Düz bir yol listesi yazmak yetmiyor: ``site`` modülü o yolları
+    ``sys.path``'in **sonuna** ekler, oysa ``PYTHONPATH`` **başına** ekler.
+    Aynı paketin yarım bir kopyası daha önce geliyorsa düz liste çalışmaz.
+    ``.pth`` dosyalarında ``import`` ile başlayan satırlar çalıştırıldığı
+    için yolları öne almak mümkün - ve tam olarak ``PYTHONPATH`` davranışını
+    elde ederiz.
+    """
+    lines = [
+        "# AutoMesh tarafından oluşturuldu - automesh doctor --add-path",
+        "# Yollar sys.path'in BAŞINA eklenir (PYTHONPATH ile aynı öncelik).",
+    ]
+    lines.extend(_MARKER + path for path in paths)
+    literals = ", ".join("r'{0}'".format(path.replace("'", "")) for path in paths)
+    lines.append(
+        "import sys, os; _amp = [{0}]; "
+        "[sys.path.insert(0, _p) for _p in reversed(_amp) "
+        "if os.path.isdir(_p) and _p not in sys.path]".format(literals)
+    )
+    return "\n".join(lines) + "\n"
+
+
 def existing_extra_paths() -> List[str]:
     """``.pth`` dosyasında hâlihazırda kayıtlı yollar."""
     path = pth_path()
     if not os.path.isfile(path):
         return []
+    found: List[str] = []
     with open(path, "r", encoding="utf-8") as handle:
-        return [line.strip() for line in handle if line.strip()
-                and not line.startswith("#")]
+        for line in handle:
+            stripped = line.strip()
+            if stripped.startswith(_MARKER):
+                found.append(stripped[len(_MARKER):].strip())
+            elif stripped and not stripped.startswith("#") \
+                    and not stripped.startswith("import "):
+                found.append(stripped)          # eski düz biçim
+    return found
 
 
 def remove_path(directory: str) -> Tuple[bool, str]:
@@ -64,7 +99,7 @@ def remove_path(directory: str) -> Tuple[bool, str]:
     try:
         if remaining:
             with open(target, "w", encoding="utf-8") as handle:
-                handle.write("\n".join(remaining) + "\n")
+                handle.write(_render_pth(remaining))
         elif os.path.isfile(target):
             os.remove(target)
     except OSError as exc:
@@ -132,10 +167,12 @@ def add_path(directory: str) -> Tuple[bool, str]:
     try:
         os.makedirs(os.path.dirname(target), exist_ok=True)
         with open(target, "w", encoding="utf-8") as handle:
-            handle.write("\n".join(current) + "\n")
+            handle.write(_render_pth(current))
     except OSError as exc:
         return False, "Yazılamadı ({0}): {1}".format(target, exc)
-    return True, "Eklendi: {0}\n{1}Dosya: {2}".format(directory, INFO, target)
+    return True, "Eklendi: {0}\n{1}Dosya: {2}\n{1}Yol sys.path'in başına " \
+                 "eklenir (PYTHONPATH ile aynı öncelik).".format(
+                     directory, INFO, target)
 
 
 # --------------------------------------------------------------------------
