@@ -422,7 +422,8 @@ automesh config -o automesh.json          # örnek konfigürasyon üret
 | `--advisor` | bilinmeyen hatalarda Claude'a danış |
 | `--set bölüm.anahtar=değer` | herhangi bir ayarı geçersiz kıl |
 
-`doctor` için: `--add-path <klasör>` kalıcı olarak Python yoluna ekler.
+`doctor` için: `--add-path <klasör>` kalıcı olarak Python yoluna ekler,
+`--remove-path <klasör>` çıkarır.
 
 ---
 
@@ -531,7 +532,7 @@ src/automesh/
 Arayüzün mantığı bilerek Tkinter'dan ayrı tutuldu: `state.py` ve `runner.py`
 pencere açmadan test edilebiliyor, `app.py` yalnızca widget yerleşimi.
 
-Testler: `python -m pytest` (166 test, ANSYS ve ekran gerektirmez).
+Testler: `python -m pytest` (172 test, ANSYS ve ekran gerektirmez).
 
 ---
 

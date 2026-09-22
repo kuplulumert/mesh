@@ -51,6 +51,69 @@ def existing_extra_paths() -> List[str]:
                 and not line.startswith("#")]
 
 
+def remove_path(directory: str) -> Tuple[bool, str]:
+    """``directory``'yi kalıcı yol listesinden çıkar."""
+    directory = os.path.abspath(os.path.expandvars(os.path.expanduser(directory)))
+    current = existing_extra_paths()
+    remaining = [p for p in current
+                 if os.path.normcase(p) != os.path.normcase(directory)]
+    if len(remaining) == len(current):
+        return False, "Listede yok: {0}".format(directory)
+
+    target = pth_path()
+    try:
+        if remaining:
+            with open(target, "w", encoding="utf-8") as handle:
+                handle.write("\n".join(remaining) + "\n")
+        elif os.path.isfile(target):
+            os.remove(target)
+    except OSError as exc:
+        return False, "Güncellenemedi ({0}): {1}".format(target, exc)
+    return True, "Çıkarıldı: {0}".format(directory)
+
+
+def inspect_pyfluent() -> List[str]:
+    """PyFluent'in neden import edilemediğini ayrıntılandır.
+
+    "Bulunamadı" ile "bulundu ama eksik" çok farklı iki sorundur ve
+    çözümleri de farklıdır; bu ayrımı açıkça göstermek gerekiyor.
+    """
+    lines: List[str] = []
+    try:
+        import ansys                                   # noqa: F401
+    except Exception:
+        lines.append("{0} 'ansys' paketi hiç bulunamadı.".format(INFO))
+        lines.append("{0} Kurulum:  py -m pip install ansys-fluent-core".format(INFO))
+        return lines
+
+    for name in ("ansys", "ansys.fluent", "ansys.fluent.core"):
+        try:
+            module = __import__(name, fromlist=["__path__"])
+        except Exception as exc:
+            lines.append("{0} {1}: import edilemiyor ({2})".format(WARN, name, exc))
+            break
+        paths = list(getattr(module, "__path__", []) or [])
+        lines.append("{0} {1} -> {2}".format(
+            INFO, name, ", ".join(paths) if paths else "(yol yok)"))
+
+        if name == "ansys.fluent.core" and paths:
+            root = paths[0]
+            missing = [sub for sub in ("solver", "meshing", "session")
+                       if not os.path.exists(os.path.join(root, sub))
+                       and not os.path.exists(os.path.join(root, sub + ".py"))]
+            if missing:
+                lines.append("{0} Eksik alt paketler: {1}".format(
+                    WARN, ", ".join(missing)))
+                lines.append("{0} Bu klasördeki kopya yarım; pip ile düzgün "
+                             "kurulum gerekiyor:".format(INFO))
+                lines.append("{0}   py -m pip install ansys-fluent-core".format(INFO))
+                lines.append("{0} Kurduktan sonra yarım kopyayı yoldan "
+                             "çıkarın:".format(INFO))
+                lines.append("{0}   automesh doctor --remove-path {1}".format(
+                    INFO, os.path.dirname(os.path.dirname(os.path.dirname(root)))))
+    return lines
+
+
 def add_path(directory: str) -> Tuple[bool, str]:
     """``directory``'yi kalıcı olarak ``sys.path``'e ekle.
 
@@ -109,11 +172,10 @@ def report(lines: Optional[List[str]] = None) -> List[str]:
     if ok:
         add("{0} {1}".format(OK, detail))
     else:
-        add("{0} bulunamadı".format(FAIL))
+        add("{0} import edilemiyor".format(FAIL))
         add("{0} {1}".format(INFO, detail))
-        add("{0} Kurulum:  py -m pip install ansys-fluent-core".format(INFO))
-        add("{0} Başka bir klasörde kuruluysa:".format(INFO))
-        add("{0}   automesh doctor --add-path D:\\Work\\plm".format(INFO))
+        for line in inspect_pyfluent():
+            add(line)
     add("")
 
     add("Tkinter (arayüz için)")

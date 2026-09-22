@@ -127,6 +127,8 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--add-path", metavar="KLASÖR",
                         help="Bu klasörü kalıcı olarak Python yoluna ekle "
                              "(her CMD'de set PYTHONPATH yazmaya son)")
+    doctor.add_argument("--remove-path", metavar="KLASÖR",
+                        help="Daha önce eklenmiş bir klasörü yoldan çıkar")
 
     # ---- rules / config --------------------------------------------------
     sub.add_parser("rules", help="Teşhis kural tabanını listele")
@@ -315,6 +317,13 @@ def cmd_gui(args: argparse.Namespace) -> int:
 
 def cmd_doctor(args: argparse.Namespace) -> int:
     from . import doctor as doctor_mod
+
+    if args.remove_path:
+        ok, message = doctor_mod.remove_path(args.remove_path)
+        print(("[+] " if ok else "[x] ") + message)
+        print()
+        if not ok:
+            return 2
 
     if args.add_path:
         ok, message = doctor_mod.add_path(args.add_path)

@@ -32,6 +32,31 @@ Alternatifi `setx PYTHONPATH "D:\Work\plm"` ile kalıcı ortam değişkeni
 yapmaktır, ama o makinedeki **her** Python'u etkiler ve başka projelerde
 çakışma yaratabilir; `.pth` yalnızca o kurulumu etkilediği için tercih edilir.
 
+## PyFluent bulunuyor ama "No module named ansys.fluent.core.solver"
+
+Bu "bulunamadı"dan farklı bir sorundur: paketin klasörü yolda, ama içi
+eksik. Genellikle bir kaynak ağacının ya da yarım kopyalanmış bir kurulumun
+işaret edilmesinden olur.
+
+`automesh doctor` bu durumda hangi klasörün işaret edildiğini ve hangi alt
+paketlerin eksik olduğunu yazar. Çözüm, düzgün bir kurulum yapmak:
+
+```bat
+py -m pip install ansys-fluent-core
+```
+
+Kurulum bittikten sonra yarım kopyayı yoldan çıkarın, yoksa ikisi
+karışabilir:
+
+```bat
+automesh doctor --remove-path D:\Work\plm
+automesh doctor
+```
+
+Kurumsal ağda pip PyPI'ye erişemiyorsa (proxy/sertifika hatası) BT'den
+`ansys-fluent-core` paketini iç depodan kurmasını isteyin; yarım bir kopyayı
+yola eklemek çalışmaz.
+
 ## Agent hiç başlamıyor
 
 **`PyFluent kurulu değil`**

@@ -129,3 +129,84 @@ def test_cli_doctor_add_path_failure_returns_error(tmp_path, capsys):
 
     assert main(["doctor", "--add-path", str(tmp_path / "olmayan")]) == 2
     assert "[x]" in capsys.readouterr().out
+
+
+def test_remove_path_drops_one_entry(tmp_path, monkeypatch):
+    site_dir = tmp_path / "site-packages"
+    site_dir.mkdir()
+    first, second = tmp_path / "a", tmp_path / "b"
+    first.mkdir()
+    second.mkdir()
+    monkeypatch.setattr(doctor, "_site_packages", lambda: str(site_dir))
+
+    doctor.add_path(str(first))
+    doctor.add_path(str(second))
+    ok, message = doctor.remove_path(str(first))
+    assert ok and "Çıkarıldı" in message
+    assert doctor.existing_extra_paths() == [str(second)]
+
+
+def test_removing_the_last_entry_deletes_the_file(tmp_path, monkeypatch):
+    site_dir = tmp_path / "site-packages"
+    site_dir.mkdir()
+    only = tmp_path / "only"
+    only.mkdir()
+    monkeypatch.setattr(doctor, "_site_packages", lambda: str(site_dir))
+
+    doctor.add_path(str(only))
+    doctor.remove_path(str(only))
+    assert not (site_dir / doctor.PTH_NAME).exists()
+    assert doctor.existing_extra_paths() == []
+
+
+def test_remove_path_reports_unknown_entries(tmp_path, monkeypatch):
+    monkeypatch.setattr(doctor, "_site_packages", lambda: str(tmp_path))
+    ok, message = doctor.remove_path(str(tmp_path / "hic-eklenmedi"))
+    assert not ok and "Listede yok" in message
+
+
+def test_inspect_pyfluent_explains_a_missing_package():
+    lines = doctor.inspect_pyfluent()
+    assert lines
+    assert any("ansys" in line for line in lines)
+
+
+def test_inspect_pyfluent_flags_a_partial_install(tmp_path, monkeypatch):
+    """Paket bulunuyor ama alt paketleri eksikse bunu açıkça söylemeli."""
+    root = tmp_path / "plm" / "ansys" / "fluent" / "core"
+    root.mkdir(parents=True)
+    (root / "__init__.py").write_text("", encoding="utf-8")
+
+    class _Module:
+        __path__ = [str(root)]
+
+    real_import = doctor.__builtins__["__import__"] if isinstance(
+        doctor.__builtins__, dict) else __import__
+
+    def fake_import(name, *args, **kwargs):
+        if name in ("ansys", "ansys.fluent", "ansys.fluent.core"):
+            return _Module()
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+    lines = doctor.inspect_pyfluent()
+    text = "\n".join(lines)
+    assert "Eksik alt paketler" in text
+    assert "solver" in text
+    assert "pip install ansys-fluent-core" in text
+    assert "--remove-path" in text
+
+
+def test_cli_doctor_remove_path(tmp_path, monkeypatch, capsys):
+    from automesh.cli import main
+
+    site_dir = tmp_path / "site-packages"
+    site_dir.mkdir()
+    vendor = tmp_path / "plm"
+    vendor.mkdir()
+    monkeypatch.setattr(doctor, "_site_packages", lambda: str(site_dir))
+
+    main(["doctor", "--add-path", str(vendor)])
+    capsys.readouterr()
+    main(["doctor", "--remove-path", str(vendor)])
+    assert "Çıkarıldı" in capsys.readouterr().out
