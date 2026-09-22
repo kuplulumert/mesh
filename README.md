@@ -319,6 +319,69 @@ Fluent'ten `domain extents` alıp planı **yeniden** hesaplar.
 
 ---
 
+## Yüzey gruplarına özel boyut
+
+Global bir hücre boyutu her yere aynı davranır: 2 mm'lik bir deliği çözmek
+için mesh'i inceltirseniz düz duvarlar da gereksiz yere incelir ve hücre
+sayısı patlar. Agent bunun yerine yüzeyleri sınıflandırıp her sınıfa kendi
+boyutunu verir.
+
+**SpaceClaim tarafında** (analiz sırasında, aynı headless koşuda):
+
+1. Her yüzeyin tipi (silindir / koni / küre / torus / düzlem) ve eğrilik
+   yarıçapı okunur.
+2. Düzlemler atlanır - onlar global boyutta kalmalı.
+3. Kalanlar yarıçaplarına göre **kat-kat bantlara** ayrılır (varsayılan: her
+   bant bir öncekinin iki katı).
+4. Her bant için `Create NS` ile bir named selection oluşturulur:
+   `automesh_cylinder_r0p80mm` gibi.
+5. Model `.scdoc` olarak kaydedilir.
+
+> **Neden .scdoc:** STEP named selection **taşımaz**. Gruplar varsa agent
+> dışa aktarımı otomatik olarak `.scdoc`'a çevirir; Fluent Meshing onu okuyup
+> grupları yüzey etiketi (face label) olarak alır. `export_format: auto`
+> varsayılanı bunu kendisi halleder.
+
+**Fluent tarafında** her grup bir `Add Local Sizing` görevine dönüşür
+(`BOIExecution: Face Size`, kapsam o grubun etiketi).
+
+Boyut kuralı, özelliği çevresi boyunca çözmektir:
+
+```
+hücre boyutu = 2·pi·r / (çevre başına hücre)     (varsayılan 16)
+```
+
+16 hücre/çevre ile bu `0.39·r` eder. Örnek bir çalışmada:
+
+| Grup | Yüzey | En küçük yarıçap | Hücre boyutu |
+|---|---|---|---|
+| `automesh_torus_r0p20mm` | 8 | 0.2 mm | **0.079 mm** |
+| `automesh_cylinder_r0p80mm` | 12 | 0.8 mm | **0.314 mm** |
+| `automesh_cylinder_r4p00mm` | 6 | 4 mm | **1.571 mm** |
+| *(gruplanmayan yüzeyler)* | - | - | *global 2.95 mm* |
+
+İki güvenlik freni var: global boyuta **yakın** kontroller eklenmez (faydası
+yoktur), ve hiçbir kontrol global maksimumun 1/200'ünden ince olamaz. Kontrol
+sayısı varsayılan 8 ile sınırlı - en ince gruplar önceliklidir, çünkü mesh'i
+asıl onlar zorlar.
+
+Ayarlar:
+
+```yaml
+local_sizing:
+  enabled: true
+  cells_per_circle: 16       # delik çevresinde kaç hücre
+  max_controls: 8            # en fazla kaç kontrol
+  band_factor: 2.0           # yarıçap bantlarının oranı
+  radius_ceiling_ratio: 0.08 # gövdenin %8'inden büyük yarıçaplar gruplanmaz
+  min_size_ratio: 200.0      # en ince kontrol = global max / 200
+```
+
+Hangi grubun neden hangi boyutu aldığı raporda ayrı bir bölümde yazar; bir
+grup SpaceClaim'de oluşturulamazsa o da sebebiyle birlikte görünür.
+
+---
+
 ## Otonom döngü
 
 İki iç içe döngü var:
@@ -508,6 +571,7 @@ src/automesh/
     fallback.py      Son çare + Fluent'in sınır kutusundan metrik üretimi
   planning/
     sizing.py        Geometri metrikleri -> MeshPlan (tüm heuristikler burada)
+    local_sizing.py  Yüzey gruplarından face size kontrolleri
     proposals.py     Ölçüm tablosu + seçilebilir mesh kademeleri ve gerekçeleri
     adjust.py        Plan üzerinde yapılan tekil düzenlemeler
   fluent/
@@ -542,6 +606,9 @@ Testler: `python -m pytest` (176 test, ANSYS ve ekran gerektirmez).
 
 ## Sınırlar ve bilinen kısıtlar
 
+- **Yüzey gruplama yalnızca SpaceClaim backend'iyle çalışır.** STEP/STL
+  okuyucular yüzey tipi ve yarıçap bilgisini bu ayrıntıda vermez; o
+  dosyalarla global boyutlandırma devrede kalır.
 - **SpaceClaim backend'i Windows'a ve lisansa bağlıdır.** Yoksa STEP/STL
   backend'leri devreye girer; bunlar hacim ve alanı bilmez, bu yüzden hücre
   sayısı tahmini sınır kutusuna dayanır (rapor bunu açıkça yazar).
@@ -552,9 +619,10 @@ Testler: `python -m pytest` (176 test, ANSYS ve ekran gerektirmez).
 - **Fault-tolerant akış** görevleri varsayılan ayarlarıyla çalıştırılır; leakage
   eşiği ve capping seçimleri gibi ileri ayarlar henüz plan tarafından
   yönetilmiyor.
-- **Yerel boyutlandırma (Body of Influence)** planda destekleniyor ama otomatik
-  üretilmiyor; zone isimleri ancak içe aktarmadan sonra bilindiği için bunu
-  config'ten vermeniz gerekir.
+- **Named selection oluşturma SpaceClaim API'sine dayanır** ve sürümler arası
+  farklılık gösterebilir. Betik birkaç yazımı sırayla dener; başarısız olursa
+  grup raporda `oluşturulamadı` olarak işaretlenir ve o grup için kontrol
+  üretilmez - çalışma durmaz, global boyutla devam eder.
 - Hücre sayısı tahmini yaklaşık iki kat hata payına sahiptir; bütçe bunu hesaba
   katarak kabalaştırır. Öneri ekranındaki **bellek tahmini de kabadır**
   (~1.2 GB / milyon hücre) - doldurma tipine, prizma sayısına ve Fluent

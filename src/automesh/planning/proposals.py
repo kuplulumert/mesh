@@ -100,6 +100,19 @@ def measurements(metrics: GeometryMetrics, unit: Optional[str] = None,
         Measurement("Karmaşıklık skoru", "{0:.2f} / 1.00".format(metrics.complexity()),
                     "boyutlandırmayı bu sürüyor"),
     ])
+    if metrics.face_groups:
+        created = [g for g in metrics.face_groups if g.created]
+        rows.append(Measurement(
+            "Yüzey grubu", "{0} grup, {1} yüzey".format(
+                len(created), sum(g.face_count for g in created)),
+            "her biri kendi hücre boyutunu alır"))
+        finest = min((g for g in created if g.representative_radius > 0),
+                     key=lambda g: g.representative_radius, default=None)
+        if finest is not None:
+            rows.append(Measurement(
+                "En ince grup", "{0} ({1})".format(
+                    finest.name, format_length(finest.representative_radius, unit)),
+                "yerel boyutu bu belirler"))
     return rows
 
 

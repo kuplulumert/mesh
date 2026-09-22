@@ -135,6 +135,7 @@ class BackgroundRun:
         """Ölçümleri al ve seçilebilir kademeleri üret (Fluent açılmaz)."""
         from ..geometry import analyze_geometry
         from ..planning import build_proposals, measurements
+        from ..units import resolve_display_unit
 
         cfg = self.settings.to_config()
         # Kademeleri üretirken kullanıcının önceki seçimi işe karışmasın.
@@ -148,6 +149,9 @@ class BackgroundRun:
             log.info("%-26s %s%s", row.label, row.value, note)
         for warning in self.metrics.warnings:
             log.warning("%s", warning)
+        _log_face_groups(log, self.metrics,
+                         resolve_display_unit(cfg.output.display_unit,
+                                              self.metrics.diagonal))
         self.proposals = build_proposals(self.metrics, cfg)
         log.info("%d mesh kademesi hazır - seçim penceresi açılıyor.",
                  len(self.proposals))
@@ -183,6 +187,7 @@ class BackgroundRun:
         log.info("Karmaşıklık       : %.2f", metrics.complexity())
         for warning in metrics.warnings:
             log.warning("%s", warning)
+        _log_face_groups(log, metrics, unit)
 
         if self.mode != "plan":
             return
@@ -208,8 +213,27 @@ class BackgroundRun:
             log.info("Sınır tabakası    : kapalı")
         if plan.estimated_cell_count:
             log.info("Tahmini hücre     : {0:,}".format(plan.estimated_cell_count))
+        if plan.local_sizings:
+            log.info("--- Yüzey gruplarına özel boyutlar ---")
+            for sizing in plan.local_sizings:
+                log.info("%-32s %s", sizing.name, format_length(sizing.size, punit))
         for note in plan.notes:
             log.info("* %s", note)
+
+
+def _log_face_groups(log, metrics, unit: str) -> None:
+    """Oluşturulan yüzey gruplarını arayüz günlüğüne yaz."""
+    from ..units import format_length
+
+    groups = getattr(metrics, "face_groups", None) or []
+    if not groups:
+        return
+    log.info("--- Yüzey grupları (SpaceClaim named selection) ---")
+    for group in groups:
+        mark = "" if group.created else "  [oluşturulamadı: {0}]".format(
+            group.note or "?")
+        log.info("%-32s %2d yüzey  r=%s%s", group.name, group.face_count,
+                 format_length(group.representative_radius, unit), mark)
 
 
 def _yesno(value: Optional[bool]) -> str:

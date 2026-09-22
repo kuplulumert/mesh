@@ -78,7 +78,9 @@ class GeometrySettings:
     spaceclaim_exe: Optional[str] = None       # full path to SpaceClaim.exe
     spaceclaim_script_api: str = "251"
     spaceclaim_timeout_s: int = 900
-    export_format: str = "step"                # step | pmdb | stl (what SpaceClaim writes)
+    #: SpaceClaim'in Fluent için yazacağı format.
+    #: "auto" -> yüzey grupları açıksa .scdoc (grupları taşır), yoksa STEP.
+    export_format: str = "auto"
     length_unit: Optional[str] = None          # override the detected unit
     # Flow hints - purely optional, they sharpen the boundary layer sizing.
     velocity: Optional[float] = None           # m/s
@@ -119,6 +121,35 @@ class PlanningSettings:
     override_max_size: float = 0.0             # m
     override_growth_rate: float = 0.0
     override_layer_count: int = -1             # -1 -> dokunma
+
+
+@dataclass
+class LocalSizingSettings:
+    """Yüzey gruplarına özel hücre boyutu.
+
+    SpaceClaim'de yüzeyler tipine ve yarıçapına göre gruplanır (named
+    selection), sonra her grup Fluent'te kendi Face Size kontrolünü alır.
+    """
+
+    enabled: bool = True
+    name_prefix: str = "automesh"
+    #: Bir deliğin/filetonun çevresinde istenen hücre sayısı.
+    cells_per_circle: float = 16.0
+    #: En fazla kaç kontrol üretilsin (her biri mesh süresini uzatır).
+    max_controls: int = 8
+    #: Yarıçap bantlarının oranı (2.0 -> her bant bir öncekinin iki katı).
+    band_factor: float = 2.0
+    #: Bantlamanın başlangıç yarıçapı (m).
+    band_anchor: float = 1.0e-4
+    #: Bir grubun oluşması için gereken en az yüzey sayısı.
+    min_faces_per_group: int = 2
+    #: Gövde köşegeninin bu oranından büyük yarıçaplar gruplanmaz;
+    #: onlar zaten global boyutla çözülür.
+    radius_ceiling_ratio: float = 0.08
+    #: Yerel boyut global maksimumun 1/bu değerinden ince olamaz.
+    min_size_ratio: float = 200.0
+    #: Global boyutun bu oranına yakın kontroller eklenmez (faydasız).
+    skip_above_ratio: float = 0.9
 
 
 @dataclass
@@ -166,6 +197,7 @@ class Config:
     fluent: FluentSettings = field(default_factory=FluentSettings)
     geometry: GeometrySettings = field(default_factory=GeometrySettings)
     planning: PlanningSettings = field(default_factory=PlanningSettings)
+    local_sizing: LocalSizingSettings = field(default_factory=LocalSizingSettings)
     quality: QualityThresholds = field(default_factory=QualityThresholds)
     autonomy: AutonomySettings = field(default_factory=AutonomySettings)
     advisor: AdvisorSettings = field(default_factory=AdvisorSettings)

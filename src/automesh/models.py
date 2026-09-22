@@ -97,6 +97,28 @@ class BodyInfo(_DictMixin):
 
 
 @dataclass
+class FaceGroup(_DictMixin):
+    """SpaceClaim'de oluşturulmuş bir named selection ve içerdiği yüzeyler.
+
+    Agent yüzeyleri tipine ve eğrilik yarıçapına göre bantlara ayırır; her
+    bant bir gruba dönüşür ve Fluent'te kendi face size kontrolünü alır.
+    Böylece 2 mm'lik bir delik 0.4 mm hücre alırken, aynı parçadaki düz
+    duvar global boyutta kalır.
+    """
+
+    name: str = ""                 # SpaceClaim'deki named selection adı
+    kind: str = ""                 # cylinder | cone | sphere | torus | plane | other
+    face_count: int = 0
+    min_radius: float = 0.0        # m
+    max_radius: float = 0.0        # m
+    representative_radius: float = 0.0  # m, boyut bundan hesaplanır
+    total_area: float = 0.0        # m^2
+    min_face_size: float = 0.0     # m, sqrt(en küçük yüzey alanı)
+    created: bool = True           # named selection gerçekten oluşturuldu mu
+    note: str = ""
+
+
+@dataclass
 class GeometryMetrics(_DictMixin):
     """Everything the planner is allowed to look at."""
 
@@ -129,6 +151,8 @@ class GeometryMetrics(_DictMixin):
     length_unit_hint: str = "m"
     warnings: List[str] = field(default_factory=list)
     bodies: List[BodyInfo] = field(default_factory=list)
+    #: SpaceClaim'de oluşturulan yüzey grupları (varsa).
+    face_groups: List[FaceGroup] = field(default_factory=list)
     raw: Dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
@@ -162,11 +186,13 @@ class GeometryMetrics(_DictMixin):
         data = dict(data or {})
         bbox = data.pop("bbox", None)
         bodies = data.pop("bodies", None) or []
+        groups = data.pop("face_groups", None) or []
         fields = {f.name for f in dataclasses.fields(cls)}
         obj = cls(**{k: v for k, v in data.items() if k in fields})
         if bbox:
             obj.bbox = BoundingBox.from_dict(bbox)
         obj.bodies = [BodyInfo.from_dict(b) for b in bodies]
+        obj.face_groups = [FaceGroup.from_dict(g) for g in groups]
         return obj
 
 

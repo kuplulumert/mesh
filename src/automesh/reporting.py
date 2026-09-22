@@ -132,6 +132,43 @@ def build_markdown(agent: Any, result: RunResult) -> str:
             lines.append("- {0}".format(note))
         lines.append("")
 
+    # ---- yerel boyutlar -------------------------------------------------
+    if plan.local_sizings or metrics.face_groups:
+        lines.append("## 2b. Yüzey gruplarına özel boyutlar")
+        lines.append("")
+        lines.append("SpaceClaim'de yüzeyler tipine ve eğrilik yarıçapına göre "
+                     "gruplandı; her grup Fluent'te kendi Face Size kontrolünü "
+                     "aldı. Gruplanmayan yüzeyler global boyutta kaldı.")
+        lines.append("")
+        if plan.local_sizings:
+            lines.append("| Grup (named selection) | Yüzey | En küçük yarıçap | "
+                         "Hücre boyutu |")
+            lines.append("|---|---|---|---|")
+            by_name = {g.name: g for g in metrics.face_groups}
+            for sizing in plan.local_sizings:
+                group = by_name.get(sizing.name)
+                lines.append("| `{0}` | {1} | {2} | **{3}** |".format(
+                    sizing.name,
+                    group.face_count if group else "-",
+                    format_length(group.representative_radius, unit)
+                    if group and group.representative_radius else "-",
+                    format_length(sizing.size, unit)))
+            lines.append("")
+            lines.append("Karşılaştırma için global boyut: {0} - {1}".format(
+                format_length(plan.min_size, unit),
+                format_length(plan.max_size, unit)))
+        else:
+            lines.append("Kontrol üretilmedi; gerekçeler planlama notlarında.")
+        skipped = [g for g in metrics.face_groups if not g.created]
+        if skipped:
+            lines.append("")
+            lines.append("**Oluşturulamayan gruplar**")
+            lines.append("")
+            for group in skipped:
+                lines.append("- `{0}` - {1}".format(group.name,
+                                                    group.note or "sebep bilinmiyor"))
+        lines.append("")
+
     # ---- quality -------------------------------------------------------
     lines.append("## 3. Mesh kalitesi")
     lines.append("")

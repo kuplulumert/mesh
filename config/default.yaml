@@ -21,7 +21,7 @@ geometry:
   spaceclaim_exe: null       # "C:/Program Files/ANSYS Inc/v251/scdm/SpaceClaim.exe"
   spaceclaim_script_api: "251"
   spaceclaim_timeout_s: 900
-  export_format: step        # SpaceClaim'in Fluent için yazacağı format
+  export_format: auto        # auto -> gruplar varsa .scdoc, yoksa step
   length_unit: null          # null -> dosyadan tespit edilir
 
   # --- akış bilgisi (opsiyonel) -------------------------------------------
@@ -48,6 +48,21 @@ planning:
   layer_count_range: [5, 12]
   bl_growth_rate: 1.2
   size_min_max_ratio_cap: 500.0
+
+# Yüzey gruplarına özel hücre boyutu.
+# SpaceClaim'de yüzeyler tipine/yarıçapına göre gruplanır (named selection),
+# her grup Fluent'te kendi Face Size kontrolünü alır.
+local_sizing:
+  enabled: true
+  name_prefix: automesh
+  cells_per_circle: 16.0      # delik/fileto çevresinde istenen hücre sayısı
+  max_controls: 8             # en fazla kaç kontrol (her biri süreyi uzatır)
+  band_factor: 2.0            # yarıçap bantlarının oranı
+  band_anchor: 1.0e-04        # bantlamanın başlangıç yarıçapı [m]
+  min_faces_per_group: 2      # bir grup için gereken en az yüzey
+  radius_ceiling_ratio: 0.08  # köşegenin bu oranından büyük yarıçaplar gruplanmaz
+  min_size_ratio: 200.0       # en ince kontrol = global max / bu
+  skip_above_ratio: 0.9       # global boyutun bu oranına yakın kontroller eklenmez
 
 quality:
   # Hacim ağı

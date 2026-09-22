@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Tuple
 
 from ..config import Config
 from ..logging_utils import get_logger
-from ..models import BodyInfo, BoundingBox, GeometryMetrics
+from ..models import BodyInfo, BoundingBox, FaceGroup, GeometryMetrics
 from .base import CAD_EXTENSIONS, GeometryAnalyzer, GeometryAnalyzerError, extension
 
 SCRIPT_NAME = "spaceclaim_analyze.py"
@@ -125,11 +125,14 @@ class SpaceClaimAnalyzer(GeometryAnalyzer):
             output_file = os.path.join(workdir, "analysis.json")
             export_file = self._export_target(path, workdir, cfg)
 
+            from ..planning.local_sizing import spaceclaim_params
+
             params = {
                 "input": os.path.abspath(path),
                 "output": output_file,
                 "export": export_file or "",
             }
+            params.update(spaceclaim_params(cfg))
             with open(params_file, "w", encoding="utf-8") as fh:
                 json.dump(params, fh, indent=2)
 
@@ -195,9 +198,13 @@ class SpaceClaimAnalyzer(GeometryAnalyzer):
 
     # ------------------------------------------------------------------
     def _export_target(self, path: str, workdir: str, cfg: Config) -> Optional[str]:
-        fmt = (cfg.geometry.export_format or "").lower()
-        if not fmt or fmt in ("none", "off"):
+        fmt = (cfg.geometry.export_format or "auto").lower()
+        if fmt in ("none", "off"):
             return None
+        if fmt == "auto":
+            # Yüzey grupları üretilecekse STEP işe yaramaz: STEP named
+            # selection taşımaz.  .scdoc taşır ve Fluent Meshing onu okur.
+            fmt = "scdoc" if cfg.local_sizing.enabled else "step"
         ext = _EXPORT_EXTENSIONS.get(fmt)
         if ext is None:
             raise GeometryAnalyzerError("Desteklenmeyen dışa aktarım formatı: {0}".format(fmt))
@@ -247,6 +254,21 @@ def metrics_from_raw(raw: Dict) -> GeometryMetrics:
         metrics.has_free_edges = bool(raw["has_free_edges"])
     metrics.length_unit_hint = raw.get("length_unit_hint", "m")
     metrics.warnings = list(raw.get("warnings") or [])
+    metrics.face_groups = [
+        FaceGroup(
+            name=str(g.get("name", "")),
+            kind=str(g.get("kind", "")),
+            face_count=int(g.get("face_count", 0) or 0),
+            min_radius=float(g.get("min_radius", 0.0) or 0.0),
+            max_radius=float(g.get("max_radius", 0.0) or 0.0),
+            representative_radius=float(g.get("representative_radius", 0.0) or 0.0),
+            total_area=float(g.get("total_area", 0.0) or 0.0),
+            min_face_size=float(g.get("min_face_size", 0.0) or 0.0),
+            created=bool(g.get("created", True)),
+            note=str(g.get("note", "")),
+        )
+        for g in (raw.get("face_groups") or [])
+    ]
     metrics.bodies = [
         BodyInfo(
             name=str(b.get("name", "")),
@@ -260,5 +282,6 @@ def metrics_from_raw(raw: Dict) -> GeometryMetrics:
         )
         for b in (raw.get("bodies") or [])
     ]
-    metrics.raw = {k: v for k, v in raw.items() if k not in ("bodies",)}
+    metrics.raw = {k: v for k, v in raw.items()
+                   if k not in ("bodies", "face_groups")}
     return metrics

@@ -114,14 +114,18 @@ class WorkflowRunner:
             results.append(self._execute(LOCAL_SIZING))
             return results
         for sizing in self.plan.local_sizings:
-            arguments = {
+            arguments: Dict[str, Any] = {
                 "AddChild": "yes",
                 "BOIControlName": sizing.name,
                 "BOIExecution": sizing.size_control_type,
                 "BOISize": self._u(sizing.size),
-                "BOIGrowthRate": sizing.growth_rate,
+                "BOIGrowthRate": round(sizing.growth_rate, 4),
+                # Gruplar SpaceClaim'den named selection olarak geldiği için
+                # kapsam "label"dır; zone değil.
+                "BOIZoneorLabel": "label",
                 "BOIFaceLabelList": [sizing.target],
             }
+            self.log.info("Yerel boyut: %s -> %.4g m", sizing.name, sizing.size)
             results.append(self._set_and_execute(LOCAL_SIZING, arguments))
         return results
 

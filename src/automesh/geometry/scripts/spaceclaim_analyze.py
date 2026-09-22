@@ -196,6 +196,215 @@ def face_radius(face):
     return 0.0
 
 
+# ------------------------------------------------- yuzey siniflandirma
+
+def design_faces(design_body):
+    """Secim yapilabilir DesignFace listesi.
+
+    ``body.Shape.Faces`` geometrik Face doner ve secime uygun degildir;
+    named selection icin DesignFace gerekir.
+    """
+    try:
+        return list(design_body.Faces)
+    except Exception:
+        return []
+
+
+def face_area(design_face):
+    for getter in (lambda: design_face.Area,
+                   lambda: design_face.Shape.Area):
+        try:
+            value = getter()
+            if value and value > 0:
+                return float(value)
+        except Exception:
+            continue
+    return 0.0
+
+
+def face_geometry(design_face):
+    for getter in (lambda: design_face.Shape.Geometry,
+                   lambda: design_face.Geometry):
+        try:
+            value = getter()
+            if value is not None:
+                return value
+        except Exception:
+            continue
+    return None
+
+
+def geometry_name(geometry):
+    try:
+        return geometry.GetType().Name
+    except Exception:
+        return "Unknown"
+
+
+def geometry_radius(geometry):
+    """Silindir/kure/koni/torus yariçapi (metre); duzlemde 0."""
+    if geometry is None:
+        return 0.0
+    for attr in ("Radius", "MinorRadius"):
+        try:
+            value = getattr(geometry, attr)
+            if value and value > 0:
+                return float(value)
+        except Exception:
+            continue
+    return 0.0
+
+
+def band_key(radius, anchor, factor):
+    """Yariçapi kat-kat bantlara ayir (bant indeksi)."""
+    if radius <= 0 or anchor <= 0:
+        return None
+    ratio = radius / anchor
+    index = 0
+    while ratio >= factor:
+        ratio = ratio / factor
+        index += 1
+    while ratio < 1.0 and index > -20:
+        ratio = ratio * factor
+        index -= 1
+    return index
+
+
+def format_size(value_m):
+    """0.0008 -> '0p80mm' (isimde nokta kullanilamaz)."""
+    mm = value_m * 1000.0
+    # 0.1 mm ve ustu mm olarak okunur (mesh dilinde dogal olan bu);
+    # daha kucugu mikrona cevrilir ki "0p05mm" gibi okunmaz isimler cikmasin.
+    if mm >= 0.1:
+        text = "%.2f" % mm
+        unit = "mm"
+    else:
+        text = "%.1f" % (mm * 1000.0)
+        unit = "um"
+    return text.replace(".", "p") + unit
+
+
+def create_named_selection(faces, name):
+    """SpaceClaim'de grup (named selection) olustur."""
+    try:
+        selection = Selection.Create(faces)                   # noqa: F821
+    except Exception:
+        try:
+            selection = FaceSelection.Create(faces)           # noqa: F821
+        except Exception:
+            return False, "secim olusturulamadi"
+
+    result = None
+    try:
+        result = NamedSelection.Create(selection, Selection.Empty())   # noqa: F821
+    except Exception:
+        try:
+            result = NamedSelection.Create(selection)         # noqa: F821
+        except Exception:
+            return False, traceback.format_exc().splitlines()[-1]
+
+    created = None
+    try:
+        created = result.CreatedNamedSelection
+    except Exception:
+        created = None
+    if created is None:
+        return True, "olusturuldu ama yeniden adlandirilamadi"
+
+    for setter in (lambda: created.SetName(name),
+                   lambda: setattr(created, "Name", name)):
+        try:
+            setter()
+            return True, ""
+        except Exception:
+            continue
+    try:
+        RenameObject.Execute(created, name)                   # noqa: F821
+        return True, ""
+    except Exception:
+        return True, "ad verilemedi"
+
+
+def build_face_groups(bodies, params, diagonal):
+    """Yuzeyleri tip ve yariçap bandina gore grupla, named selection yaz."""
+    enabled = params.get("group_faces", True)
+    if not enabled or diagonal <= 0:
+        return []
+
+    prefix = params.get("group_prefix", "automesh")
+    factor = float(params.get("band_factor", 2.0))
+    anchor = float(params.get("band_anchor", 1.0e-4))
+    max_groups = int(params.get("max_groups", 8))
+    min_faces = int(params.get("min_faces_per_group", 2))
+    # Govde boyutuna gore anlamsiz derecede buyuk yariçaplar gruplanmaz:
+    # onlar zaten global boyutla cozuluyor.
+    radius_ceiling = diagonal * float(params.get("radius_ceiling_ratio", 0.08))
+
+    buckets = {}
+    for design_body in bodies:
+        for design_face in design_faces(design_body):
+            geometry = face_geometry(design_face)
+            kind = geometry_name(geometry)
+            if kind in ("Plane", "Unknown"):
+                continue
+            radius = geometry_radius(geometry)
+            if radius <= 0 or radius > radius_ceiling:
+                continue
+            index = band_key(radius, anchor, factor)
+            if index is None:
+                continue
+            key = (kind.lower(), index)
+            bucket = buckets.get(key)
+            if bucket is None:
+                bucket = {"kind": kind.lower(), "faces": [], "radii": [],
+                          "areas": []}
+                buckets[key] = bucket
+            bucket["faces"].append(design_face)
+            bucket["radii"].append(radius)
+            bucket["areas"].append(face_area(design_face))
+
+    candidates = []
+    for key in buckets:
+        bucket = buckets[key]
+        if len(bucket["faces"]) < min_faces:
+            continue
+        radii = bucket["radii"]
+        candidates.append({
+            "kind": bucket["kind"],
+            "faces": bucket["faces"],
+            "min_radius": min(radii),
+            "max_radius": max(radii),
+            # En kucuk yariçap belirleyici: bandin en ince ozelligini cozmeliyiz.
+            "representative_radius": min(radii),
+            "total_area": sum(bucket["areas"]),
+            "min_face_size": math.sqrt(min([a for a in bucket["areas"] if a > 0])
+                                       ) if any(bucket["areas"]) else 0.0,
+        })
+
+    # En kucuk yariçaplar once: mesh'i asil onlar zorluyor.
+    candidates.sort(key=lambda item: item["representative_radius"])
+    candidates = candidates[:max_groups]
+
+    groups = []
+    for item in candidates:
+        name = "{0}_{1}_r{2}".format(prefix, item["kind"],
+                                     format_size(item["representative_radius"]))
+        ok, note = create_named_selection(item["faces"], name)
+        groups.append({
+            "name": name,
+            "kind": item["kind"],
+            "face_count": len(item["faces"]),
+            "min_radius": item["min_radius"],
+            "max_radius": item["max_radius"],
+            "representative_radius": item["representative_radius"],
+            "total_area": item["total_area"],
+            "min_face_size": item["min_face_size"],
+            "created": bool(ok),
+            "note": note,
+        })
+    return groups
+
+
 # ---------------------------------------------------------------- ana analiz
 
 def analyze(params):
@@ -346,8 +555,31 @@ def analyze(params):
     result["has_free_edges"] = not result["watertight"]
     result["length_unit_hint"] = "m"
 
+    # ---- yuzey gruplari (named selection) ------------------------------
+    diagonal = 0.0
+    try:
+        diagonal = math.sqrt(sum([(bbox[i + 3] - bbox[i]) ** 2 for i in range(3)]))
+    except Exception:
+        diagonal = 0.0
+    try:
+        result["face_groups"] = build_face_groups(bodies, params, diagonal)
+    except Exception:
+        result["face_groups"] = []
+        result["warnings"].append(
+            "Yuzey gruplama basarisiz: %s" % traceback.format_exc().splitlines()[-1])
+
     # ---- disari aktarim ------------------------------------------------
+    # Named selection olusturduysak STEP ise yaramaz: STEP grup tasimaz.
+    # Bu durumda .scdoc kaydedilir; Fluent Meshing onu okuyup gruplari
+    # yuzey etiketi olarak alir.
     export_path = params.get("export", "")
+    if result.get("face_groups") and export_path:
+        root, extension = os.path.splitext(export_path)
+        if extension.lower() not in (".scdoc", ".scdocx", ".pmdb"):
+            export_path = root + ".scdoc"
+            result["warnings"].append(
+                "Yuzey gruplari olusturuldugu icin disari aktarim .scdoc "
+                "olarak degistirildi (STEP named selection tasimaz).")
     if export_path:
         try:
             folder = os.path.dirname(export_path)
@@ -385,4 +617,7 @@ def main():
         sys.stdout.write(_encode(result))
 
 
-main()
+# SpaceClaim betigi dogrudan calistirir. Testler ayni dosyayi
+# AUTOMESH_SC_NO_RUN=1 ile exec edip saf fonksiyonlari dogrular.
+if not os.environ.get("AUTOMESH_SC_NO_RUN"):
+    main()

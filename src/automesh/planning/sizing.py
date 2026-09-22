@@ -105,6 +105,14 @@ def plan_mesh(metrics: GeometryMetrics, cfg: Config) -> MeshPlan:
     # yazar.  Böylece rapor, seçilen değerin neyin yerine geçtiğini gösterir.
     _apply_overrides(plan, cfg)
 
+    # ---- yüzey gruplarına özel boyutlar --------------------------------
+    from .local_sizing import build_local_sizings
+
+    plan.local_sizings, sizing_notes = build_local_sizings(
+        metrics.face_groups, plan, cfg)
+    for note in sizing_notes:
+        plan.note(note)
+
     # ---- budget --------------------------------------------------------
     plan.estimated_cell_count = estimate_cell_count(plan, metrics)
     _apply_cell_budget(plan, metrics, cfg)
