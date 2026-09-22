@@ -162,6 +162,26 @@ class LocalSizingSettings:
     #: Global boyutun bu oranına yakın kontroller eklenmez (faydasız).
     skip_above_ratio: float = 0.9
 
+    # --- güvenlik ve kullanıcı kararı ------------------------------------
+    #: Mutlak taban (m). Hiçbir yerel boyut bunun altına inmez.
+    #: 0 -> yalnızca ``min_size_ratio`` tabanı geçerli.
+    absolute_floor: float = 0.0
+    #: Global boyuttan bu kadar ince kontroller "riskli" işaretlenir.
+    warn_ratio: float = 60.0
+    #: Bu orandan ince kontroller "yüksek risk": Fluent zorlanabilir.
+    high_risk_ratio: float = 150.0
+    #: Bir kontrolün yüzeyinde tahmini hücre sayısı bunu aşarsa uyarılır.
+    warn_face_cells: int = 2_000_000
+    #: Yüksek riskli kontroller otomatik olarak tabana çekilsin mi?
+    #: false -> uyarılır ama olduğu gibi bırakılır (kullanıcı karar verir).
+    clamp_high_risk: bool = True
+
+    #: Kullanıcının gözden geçirme ekranında verdiği bölme sayıları
+    #: (grup adı -> kaça bölünecek). Hücre boyutu buradan hesaplanır.
+    divisions: Dict[str, float] = field(default_factory=dict)
+    #: Kullanıcının kapattığı kontroller.
+    disabled: List[str] = field(default_factory=list)
+
 
 @dataclass
 class AutonomySettings:

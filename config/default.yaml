@@ -56,9 +56,12 @@ planning:
 local_sizing:
   enabled: true
   name_prefix: automesh
-  cells_per_circle: 16.0      # eğrilik: delik/fileto çevresinde kaç hücre
-  cells_across_width: 3.0     # dar bant (2*alan/çevre) enine kaç hücre
-  cells_across_gap: 3.0       # ince kesit (2*Hacim/Alan) içinde kaç hücre
+  # Hücre boyutu = bölünen uzunluk / bölme sayısı. Aşağıdakiler varsayılan
+  # bölme sayılarıdır; arayüzdeki seçim ekranından ya da --divisions ile
+  # grup bazında değiştirilebilir.
+  cells_per_circle: 16.0      # eğrilik: çevre (2*pi*r) kaça bölünsün
+  cells_across_width: 3.0     # dar bant (2*alan/çevre) kaça bölünsün
+  cells_across_gap: 3.0       # ince kesit (2*Hacim/Alan) kaça bölünsün
   max_controls: 8             # en fazla kaç kontrol (her biri süreyi uzatır)
   band_factor: 2.0            # boyut bantlarının oranı
   band_anchor: 1.0e-04        # bantlamanın başlangıç boyutu [m]
@@ -66,6 +69,12 @@ local_sizing:
   max_useful_ratio: 0.03      # köşegenin bu oranından kaba gereksinimler gruplanmaz
   min_size_ratio: 200.0       # en ince kontrol = global max / bu
   skip_above_ratio: 0.9       # global boyuta bu kadar yakın kontroller eklenmez
+  # Aşırı ince boyutlara karşı frenler:
+  absolute_floor: 0.0         # mutlak taban [m]; 0 -> yalnızca oran tabanı
+  warn_ratio: 60.0            # global boyutun bu katından ince: "dikkat"
+  high_risk_ratio: 150.0      # bu katından ince: "riskli" (Fluent zorlanabilir)
+  warn_face_cells: 2000000    # tek grup bu kadar yüzey hücresi üretirse uyar
+  clamp_high_risk: true       # riskli boyutlar tabana çekilsin mi
   # Sizin kendi named selection'larınız:
   read_existing_groups: true  # okunur (ASLA değiştirilmez)
   size_existing_groups: true  # onlara da uygun face size önerilir

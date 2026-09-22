@@ -1,37 +1,111 @@
-"""Yüzey gruplarından hücre boyutu türetme.
+"""Yüzey gruplarından hücre boyutu türetme - bölme sayısı üzerinden.
 
-SpaceClaim tarafında yüzeyler tipine ve eğrilik yarıçapına göre gruplandı
-(bkz. ``geometry/scripts/spaceclaim_analyze.py``).  Burada her grup için
-kendi hücre boyutu hesaplanıyor ve Fluent'in **Add Local Sizing** görevine
-verilecek kontrollere dönüştürülüyor.
+Bir CFD mühendisi "bu yüzeye 0.31 mm ver" diye düşünmez; "20 mm çapındaki
+girişi çevresinde kaça böleyim" diye düşünür. Bu modül de öyle çalışır:
 
-Temel kural, bir deliği ya da fileto yüzeyini çözmek için çevresi boyunca
-belirli sayıda hücre istemektir:
+    hücre boyutu = bölünen uzunluk / bölme sayısı
 
-    boyut = 2·pi·r / (çevre başına hücre)
+Bölünen uzunluk ölçüte göre değişir:
 
-16 hücre/çevre ile bu ``0.39·r`` eder; yani 2 mm çapında bir delik yaklaşık
-0.39 mm hücre alır - global boyut 3 mm olsa bile.  Düz duvarlar gruplanmaz,
-onlar global boyutta kalır; kontrol sayısını şişirmenin bir faydası yok.
+``curv``   deliğin/filetonun **çevresi** (2·pi·r) - kaç hücreyle dönülecek
+``width``  dar bandın **genişliği** (2·alan/çevre) - enine kaç hücre
+``gap``    **ince kesit** (2·Hacim/Alan) - içine kaç hücre
+
+Her ölçütün bir rule-of-thumb varsayılanı var (çevrede 16, enine 3), ama
+son söz kullanıcınındır: gözden geçirme ekranında bölme sayısını değiştirir,
+boyut anında yeniden hesaplanır.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import math
-from typing import List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..config import Config
 from ..models import FaceGroup, LocalSizing, MeshPlan
 from ..units import format_length
 
+# Risk seviyeleri
+OK = "ok"
+WARN = "warn"
+HIGH = "high"
+
+RISK_LABELS = {OK: "uygun", WARN: "dikkat", HIGH: "riskli"}
+
+#: Ölçüt -> (bölünen uzunluğun adı, rule-of-thumb gerekçesi)
+DRIVER_INFO = {
+    "curv": ("çevre", "Bir deliği/filetoyu düzgün çözmek için çevresinde "
+                      "12-20 hücre istenir; 16 yaygın kabuldür."),
+    "width": ("dar bant genişliği", "İnce bir bandın enine en az 3 hücre "
+                                    "gerekir, yoksa bant tek hücreye ezilir."),
+    "gap": ("ince kesit", "Bir kanalın/cidarın içinde en az 3 hücre olmalı ki "
+                          "akış profili çözülebilsin."),
+}
+
+
+@dataclass
+class SizingReview:
+    """Bir yerel boyut kontrolünün gözden geçirme satırı.
+
+    Kullanıcı ``divisions`` değerini değiştirir; ``size`` ondan hesaplanır.
+    """
+
+    name: str
+    source: str = "auto"               # auto | existing
+    driver: str = ""
+    face_count: int = 0
+
+    measured: float = 0.0              # m, ölçülen ham büyüklük (yarıçap/genişlik/kesit)
+    diameter: float = 0.0              # m, eğrilik ölçütünde çap (kullanıcı dili)
+    base_length: float = 0.0           # m, bölünen uzunluk
+    base_label: str = ""               # "çevre" / "dar bant genişliği" / "ince kesit"
+
+    divisions: float = 0.0             # kaça bölünecek (uygulanan)
+    recommended_divisions: float = 0.0  # rule-of-thumb
+    rationale: str = ""                # bölme sayısının gerekçesi
+
+    size: float = 0.0                  # m, uygulanacak hücre boyutu
+    total_area: float = 0.0            # m^2, gruptaki yüzeylerin toplam alanı
+    enabled: bool = True
+    ratio: float = 0.0                 # global max / boyut
+    face_cells: int = 0                # bu gruptaki tahmini yüzey hücresi
+    risk: str = OK
+    messages: List[str] = field(default_factory=list)
+    clamped: bool = False
+
+    @property
+    def is_existing(self) -> bool:
+        return self.source == "existing"
+
+    @property
+    def user_set(self) -> bool:
+        """Bölme sayısı kullanıcı tarafından mı verildi?"""
+        return abs(self.divisions - self.recommended_divisions) > 1e-9
+
+    def size_for(self, divisions: float) -> float:
+        """Verilen bölme sayısında hücre boyutu."""
+        if divisions <= 0 or self.base_length <= 0:
+            return 0.0
+        return self.base_length / divisions
+
+    def measured_text(self, unit: str) -> str:
+        """Kullanıcıya gösterilecek ölçüm ("çap 20 mm" gibi)."""
+        if self.driver == "curv" and self.diameter > 0:
+            return "çap {0}".format(format_length(self.diameter, unit))
+        if self.measured > 0:
+            return format_length(self.measured, unit)
+        return "-"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+# --------------------------------------------------------------------------
 
 def size_for_group(group: FaceGroup, cells_per_circle: float) -> float:
-    """Bir grubun çözülebilmesi için gereken hücre boyutu (metre).
-
-    SpaceClaim betiği eğrilik, dar bant ve ince kesit ölçütlerini yüzey yüzey
-    hesaplayıp en zorlayıcısını seçtiği için normalde o değeri kullanırız.
-    Eski kayıtlarda (ya da betik hesaplayamadıysa) yarıçaptan türetilir.
-    """
+    """Geriye dönük uyumluluk: grubun önerilen hücre boyutu."""
     if group.recommended_size > 0:
         return group.recommended_size
     radius = group.representative_radius
@@ -44,31 +118,46 @@ def size_for_group(group: FaceGroup, cells_per_circle: float) -> float:
     return 0.0
 
 
-def build_local_sizings(
-    groups: List[FaceGroup],
-    plan: MeshPlan,
-    cfg: Config,
-) -> Tuple[List[LocalSizing], List[str]]:
-    """Grupları Fluent kontrollerine çevir.
+def _base_for(group: FaceGroup, settings) -> Tuple[float, str, float, str]:
+    """``(bölünen uzunluk, etiket, önerilen bölme, gerekçe)``."""
+    label, rationale = DRIVER_INFO.get(group.driver, ("ölçülen uzunluk", ""))
 
-    ``(kontroller, notlar)`` döndürür; notlar rapora girer, böylece hangi
-    grubun neden hangi boyutu aldığı görünür.
+    if group.driver == "curv" and group.representative_radius > 0:
+        return (2.0 * math.pi * group.representative_radius, label,
+                settings.cells_per_circle, rationale)
+    if group.driver == "width" and group.min_width > 0:
+        return group.min_width, label, settings.cells_across_width, rationale
+    if group.driver == "gap" and group.min_gap > 0:
+        return group.min_gap, label, settings.cells_across_gap, rationale
+
+    # Ölçüt bilinmiyorsa betiğin hesapladığı boyuttan geriye çalış:
+    # tek bölmeyle o boyutu veren bir taban kur, kullanıcı yine bölebilsin.
+    size = size_for_group(group, settings.cells_per_circle)
+    if size > 0:
+        return size * settings.cells_across_width, label, \
+            settings.cells_across_width, rationale
+    return 0.0, label, 0.0, rationale
+
+
+def review_groups(groups: List[FaceGroup], plan: MeshPlan,
+                  cfg: Config) -> List[SizingReview]:
+    """Her grup için bölme sayısını, boyutu ve riskini hesapla.
+
+    Gözden geçirme ekranı, rapor ve ``build_local_sizings`` aynı sonucu
+    kullanır - yani kullanıcının ekranda gördüğü sayı ile Fluent'e giden
+    sayı tek yerden çıkar.
     """
     settings = cfg.local_sizing
-    notes: List[str] = []
-    sizings: List[LocalSizing] = []
+    reviews: List[SizingReview] = []
+    if not groups:
+        return reviews
 
-    if not settings.enabled or not groups:
-        return sizings, notes
-
-    unit = plan.length_unit
     floor = plan.max_size / max(settings.min_size_ratio, 2.0)
-    # Global boyuta yakın bir kontrolün hiçbir etkisi olmaz; onları eleriz.
+    if settings.absolute_floor > 0:
+        floor = max(floor, settings.absolute_floor)
     useful_ceiling = plan.max_size * settings.skip_above_ratio
+    unit = plan.length_unit
 
-    # Kullanıcının kendi grupları önce gelir: onlar açık bir niyet ifadesi,
-    # kontrol bütçesi dolarsa elenmemeliler.  Sonra otomatik gruplar, en
-    # zorlayıcıdan başlayarak.
     ordered = (
         [g for g in groups if g.is_existing]
         + sorted((g for g in groups if not g.is_existing),
@@ -77,45 +166,112 @@ def build_local_sizings(
     )
 
     for group in ordered:
+        base, label, recommended, rationale = _base_for(group, settings)
+        review = SizingReview(
+            name=group.name, source=group.source, driver=group.driver,
+            face_count=group.face_count, measured=_measured_value(group),
+            diameter=(group.representative_radius * 2.0
+                      if group.driver == "curv" else 0.0),
+            base_length=base, base_label=label, total_area=group.total_area,
+            recommended_divisions=recommended, divisions=recommended,
+            rationale=rationale,
+        )
+        reviews.append(review)
+
         if group.is_existing and not settings.size_existing_groups:
+            review.enabled = False
+            review.messages.append("Mevcut gruplara boyut verme kapalı.")
             continue
         if not group.created:
-            notes.append(
-                "'{0}' grubu SpaceClaim'de oluşturulamadı, atlandı ({1}).".format(
-                    group.name, group.note or "sebep bilinmiyor"))
+            review.enabled = False
+            review.messages.append("SpaceClaim'de oluşturulamadı: {0}".format(
+                group.note or "sebep bilinmiyor"))
+            continue
+        if base <= 0 or recommended <= 0:
+            review.enabled = False
+            review.messages.append("Bölünecek bir uzunluk ölçülemedi.")
             continue
 
-        size = size_for_group(group, settings.cells_per_circle)
+        # Kullanıcının verdiği bölme sayısı her şeyin üstünde.
+        chosen = _lookup(settings.divisions, group.name)
+        if chosen is not None and chosen > 0:
+            review.divisions = float(chosen)
+            review.messages.append(
+                "Bölme sayısı sizin tarafınızdan {0:g} olarak verildi "
+                "(öneri {1:g}).".format(chosen, recommended))
+
+        size = review.size_for(review.divisions)
         if size <= 0:
-            notes.append("'{0}' için boyut hesaplanamadı, atlandı.".format(group.name))
+            review.enabled = False
+            review.messages.append("Boyut hesaplanamadı.")
             continue
 
-        clamped = size
-        if clamped < floor:
-            clamped = floor
-            notes.append(
-                "'{0}' için hesaplanan {1} çok ince bulundu, tabana ({2}) "
-                "çekildi.".format(group.name, format_length(size, unit),
-                                  format_length(floor, unit)))
-        if clamped >= useful_ceiling:
-            notes.append(
-                "'{0}' global boyuta ({1}) yakın olduğu için kontrol "
-                "eklenmedi.".format(group.name, format_length(plan.max_size, unit)))
+        if size < floor:
+            if chosen is not None:
+                review.messages.append(
+                    "Seçtiğiniz bölme {0} veriyor; taban {1}.".format(
+                        format_length(size, unit), format_length(floor, unit)))
+            size = floor
+            review.clamped = True
+            review.messages.append(
+                "Boyut tabana ({0}) çekildi - bundan incesi Fluent'i "
+                "zorlar.".format(format_length(floor, unit)))
+
+        if size >= useful_ceiling:
+            review.enabled = False
+            review.size = size
+            review.messages.append(
+                "global boyuta ({0}) çok yakın; kontrol eklemenin faydası yok."
+                .format(format_length(plan.max_size, unit)))
+            continue
+
+        review.size = size
+        review.ratio = plan.max_size / size if size > 0 else 0.0
+        review.face_cells = _face_cells(group, size)
+        _assess_risk(review, settings)
+
+        if _in_list(settings.disabled, group.name):
+            review.enabled = False
+            review.messages.append("Bu kontrolü siz kapattınız.")
+
+    return reviews
+
+
+def build_local_sizings(groups: List[FaceGroup], plan: MeshPlan,
+                        cfg: Config) -> Tuple[List[LocalSizing], List[str]]:
+    """Grupları Fluent kontrollerine çevir.
+
+    ``(kontroller, notlar)`` döndürür; notlar rapora girer.
+    """
+    settings = cfg.local_sizing
+    notes: List[str] = []
+    sizings: List[LocalSizing] = []
+    if not settings.enabled or not groups:
+        return sizings, notes
+
+    unit = plan.length_unit
+    for review in review_groups(groups, plan, cfg):
+        if not review.enabled:
+            if review.messages:
+                notes.append("'{0}' atlandı: {1}".format(
+                    review.name, " ".join(review.messages)))
             continue
 
         sizings.append(LocalSizing(
-            name=group.name,
-            target=group.name,
-            size=clamped,
-            size_control_type="Face Size",
-            growth_rate=plan.growth_rate,
+            name=review.name, target=review.name, size=review.size,
+            size_control_type="Face Size", growth_rate=plan.growth_rate,
         ))
-        notes.append("'{0}'{1}: {2} yüzey, {3} -> hücre {4}.".format(
-            group.name,
-            " (sizin grubunuz, değiştirilmedi)" if group.is_existing else "",
-            group.face_count,
-            _driver_text(group, unit),
-            format_length(clamped, unit)))
+        notes.append(
+            "'{0}'{1}: {2} yüzey, {3} {4} -> {5:g} bölme -> hücre {6}{7}.".format(
+                review.name,
+                " (sizin grubunuz, değiştirilmedi)" if review.is_existing else "",
+                review.face_count, review.base_label,
+                format_length(review.base_length, unit),
+                review.divisions, format_length(review.size, unit),
+                "  [{0}]".format(RISK_LABELS[review.risk])
+                if review.risk != OK else ""))
+        for message in review.messages:
+            notes.append("    {0}".format(message))
 
         if len(sizings) >= settings.max_controls:
             notes.append(
@@ -124,6 +280,83 @@ def build_local_sizings(
             break
 
     return sizings, notes
+
+
+# --------------------------------------------------------------------------
+
+def evaluate(review: SizingReview, divisions: float, max_size: float,
+             settings) -> Tuple[float, float, int, str]:
+    """Bir bölme sayısının sonucunu hesapla - ``(boyut, oran, hücre, risk)``.
+
+    Arayüz kullanıcı sayıyı değiştirdikçe bunu çağırır; nihai karar yine
+    :func:`review_groups` tarafından yeniden üretilir, yani ekrandaki sayı
+    ile Fluent'e giden sayı aynı kuraldan çıkar.
+    """
+    size = review.size_for(divisions)
+    if size <= 0:
+        return 0.0, 0.0, 0, OK
+    floor = max_size / max(settings.min_size_ratio, 2.0)
+    if settings.absolute_floor > 0:
+        floor = max(floor, settings.absolute_floor)
+    size = max(size, floor)
+
+    ratio = max_size / size if size > 0 else 0.0
+    cells = int(review.total_area / (size * size)) if review.total_area > 0 else 0
+    risk = OK
+    if ratio >= settings.high_risk_ratio:
+        risk = HIGH
+    elif ratio >= settings.warn_ratio:
+        risk = WARN
+    if cells >= settings.warn_face_cells and risk != HIGH:
+        risk = WARN
+    return size, ratio, cells, risk
+
+
+def _measured_value(group: FaceGroup) -> float:
+    return {
+        "curv": group.representative_radius,
+        "width": group.min_width,
+        "gap": group.min_gap,
+    }.get(group.driver, group.representative_radius)
+
+
+def _face_cells(group: FaceGroup, size: float) -> int:
+    """Bu gruptaki yüzeylerin üreteceği yaklaşık hücre sayısı."""
+    if size <= 0 or group.total_area <= 0:
+        return 0
+    return int(group.total_area / (size * size))
+
+
+def _assess_risk(review: SizingReview, settings) -> None:
+    """Boyutun ne kadar riskli olduğunu işaretle."""
+    review.risk = OK
+    if review.ratio >= settings.high_risk_ratio:
+        review.risk = HIGH
+        review.messages.append(
+            "Global boyuttan {0:.0f} kat ince - Fluent zorlanabilir, süre "
+            "uzar. Bölme sayısını düşürmeyi düşünün.".format(review.ratio))
+    elif review.ratio >= settings.warn_ratio:
+        review.risk = WARN
+        review.messages.append(
+            "Global boyuttan {0:.0f} kat ince.".format(review.ratio))
+    if review.face_cells >= settings.warn_face_cells:
+        if review.risk != HIGH:
+            review.risk = WARN
+        review.messages.append(
+            "Yalnızca bu grup ~{0:,} yüzey hücresi üretir.".format(
+                review.face_cells))
+
+
+def _lookup(mapping: Dict[str, float], name: str) -> Optional[float]:
+    for key, value in (mapping or {}).items():
+        if str(key).strip().lower() == name.strip().lower():
+            return float(value)
+    return None
+
+
+def _in_list(names: List[str], name: str) -> bool:
+    return any(str(n).strip().lower() == name.strip().lower()
+               for n in (names or []))
 
 
 def spaceclaim_params(cfg: Config) -> dict:
@@ -145,32 +378,41 @@ def spaceclaim_params(cfg: Config) -> dict:
     }
 
 
-_DRIVER_TEXT = {
-    "curv": "eğrilik yarıçapı {0}",
-    "width": "dar bant genişliği {0}",
-    "gap": "ince kesit {0}",
-}
+def format_review_table(reviews: List[SizingReview], plan: MeshPlan,
+                        unit: Optional[str] = None) -> str:
+    """Konsol için gözden geçirme tablosu."""
+    unit = unit or plan.length_unit
+    lines = [
+        "Yüzey grupları - hücre boyutu = ölçülen uzunluk / bölme sayısı",
+        "-" * 92,
+        "  {0:<26} {1:<8} {2:<18} {3:>7} {4:>12} {5:>9}".format(
+            "Grup", "Kaynak", "Ölçüm", "Bölme", "Hücre", "Durum"),
+    ]
+    for review in reviews:
+        lines.append("  {0:<26} {1:<8} {2:<18} {3:>7g} {4:>12} {5:>9}".format(
+            review.name[:26],
+            "sizin" if review.is_existing else "agent",
+            review.measured_text(unit)[:18],
+            review.divisions,
+            format_length(review.size, unit) if review.size else "-",
+            RISK_LABELS[review.risk] if review.enabled else "kapalı"))
 
-
-def _driver_text(group: FaceGroup, unit: str) -> str:
-    """Boyutu neyin belirlediğini insan diliyle yaz."""
-    value = {
-        "curv": group.representative_radius,
-        "width": group.min_width,
-        "gap": group.min_gap,
-    }.get(group.driver, 0.0)
-    template = _DRIVER_TEXT.get(group.driver)
-    if template and value > 0:
-        return template.format(format_length(value, unit))
-    if group.representative_radius > 0:
-        return "eğrilik yarıçapı {0}".format(
-            format_length(group.representative_radius, unit))
-    return "ölçülen boyut"
+    lines += ["", "Gerekçeler ve uyarılar", "-" * 92]
+    for review in reviews:
+        if not review.messages and review.risk == OK:
+            continue
+        lines.append("  {0}:".format(review.name))
+        if review.rationale:
+            lines.append("      {0}".format(review.rationale))
+        for message in review.messages:
+            lines.append("      ! {0}".format(message))
+    lines += ["", "Bölme sayısını değiştirmek için:",
+              "  automesh run <geometri> --divisions <grup>=<sayı>",
+              "  (birden çok kez verilebilir; --no-local-sizing hepsini kapatır)"]
+    return "\n".join(lines)
 
 
 def summarise(sizings: List[LocalSizing], unit: str) -> List[str]:
     """Arayüz ve rapor için tek satırlık özetler."""
-    return [
-        "{0}: {1}".format(sizing.name, format_length(sizing.size, unit))
-        for sizing in sizings
-    ]
+    return ["{0}: {1}".format(s.name, format_length(s.size, unit))
+            for s in sizings]

@@ -392,3 +392,66 @@ def test_default_closes_the_session(step_file, cfg, tmp_path):
     agent = AutoMeshAgent(step_file, cfg, str(tmp_path / "run"))
     agent.run()
     assert agent.driver is None or not agent.driver.is_alive()
+
+
+# --------------------------------------------------------------------------
+# yüzey boyutu (bölme sayısı) seçimi
+# --------------------------------------------------------------------------
+
+def test_sizing_decisions_reach_the_engine(step_file):
+    settings = GuiSettings(geometry_path=step_file,
+                           sizing_divisions={"inlet": 24},
+                           sizing_disabled=["automesh_width_0p03mm"],
+                           local_floor=0.0002)
+    cfg = settings.to_config()
+    assert cfg.local_sizing.divisions == {"inlet": 24}
+    assert cfg.local_sizing.disabled == ["automesh_width_0p03mm"]
+    assert cfg.local_sizing.absolute_floor == pytest.approx(0.0002)
+    assert cfg.local_sizing.enabled is True
+
+
+def test_local_sizing_can_be_turned_off_from_the_window(step_file):
+    cfg = GuiSettings(geometry_path=step_file,
+                      local_sizing_enabled=False).to_config()
+    assert cfg.local_sizing.enabled is False
+
+
+def test_sizing_decisions_appear_in_the_equivalent_command(step_file):
+    settings = GuiSettings(geometry_path=step_file,
+                           sizing_divisions={"inlet": 24},
+                           local_floor=0.0002)
+    command = settings.equivalent_command()
+    assert "--divisions inlet=24" in command
+    assert "--min-local-size 0.0002" in command
+    off = GuiSettings(geometry_path=step_file, local_sizing_enabled=False)
+    assert "--no-local-sizing" in off.equivalent_command()
+
+
+def test_sizing_summary_reflects_the_choices(step_file):
+    assert "otomatik" in GuiSettings(geometry_path=step_file).sizing_summary()
+    assert "kapalı" in GuiSettings(geometry_path=step_file,
+                                   local_sizing_enabled=False).sizing_summary()
+    changed = GuiSettings(geometry_path=step_file,
+                          sizing_divisions={"a": 8}, sizing_disabled=["b"])
+    summary = changed.sizing_summary()
+    assert "1 grupta" in summary and "1 kontrol" in summary
+
+
+def test_clearing_the_choice_also_clears_sizing(step_file):
+    settings = GuiSettings(geometry_path=step_file, chosen_label="İnce",
+                           sizing_divisions={"a": 8}, sizing_disabled=["b"],
+                           local_floor=1e-4)
+    settings.clear_choice()
+    settings.clear_sizing_choices()
+    assert settings.sizing_divisions == {} and settings.sizing_disabled == []
+    assert settings.local_floor == 0.0
+
+
+def test_sizing_choices_survive_a_save_and_load(tmp_path):
+    path = str(tmp_path / "s.json")
+    GuiSettings(sizing_divisions={"inlet": 24}, sizing_disabled=["x"],
+                local_floor=2e-4).save(path)
+    loaded = GuiSettings.load(path)
+    assert loaded.sizing_divisions == {"inlet": 24}
+    assert loaded.sizing_disabled == ["x"]
+    assert loaded.local_floor == pytest.approx(2e-4)

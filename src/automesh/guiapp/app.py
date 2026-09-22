@@ -21,6 +21,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from .. import __version__
+from ..units import format_length
 from .runner import DONE, ERROR, LOG, BackgroundRun
 from .state import (
     DISPLAY_UNITS,
@@ -80,6 +81,8 @@ class AutoMeshApp:
         self.var_length = tk.StringVar(value=s.characteristic_length)
         self.var_status = tk.StringVar(value="Hazır. Bir geometri dosyası seçin.")
         self.var_choice = tk.StringVar(value=s.chosen_summary())
+        self.var_sizing = tk.StringVar(value=s.sizing_summary())
+        self.var_local_sizing = tk.BooleanVar(value=s.local_sizing_enabled)
         self.var_dry_run.trace_add("write", lambda *_: self._on_dry_run_toggled())
 
     # ------------------------------------------------------------------
@@ -180,6 +183,9 @@ class AutoMeshApp:
         ttk.Checkbutton(mesh, text="Sınır tabakası (prizma) kur",
                         variable=self.var_bl).grid(
             row=7, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ttk.Checkbutton(mesh, text="Yüzey gruplarına özel boyut ver",
+                        variable=self.var_local_sizing).grid(
+            row=8, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
         flow = ttk.LabelFrame(wrapper, text="Akış bilgisi (opsiyonel - y+ için)",
                               padding=PAD)
@@ -266,6 +272,11 @@ class AutoMeshApp:
                   foreground="#1b5e20").grid(row=0, column=0, sticky="w")
         ttk.Button(bar, text="Seçimi temizle",
                    command=self._clear_choice).grid(row=0, column=1, sticky="e")
+        ttk.Label(bar, textvariable=self.var_sizing,
+                  foreground="#1b5e20").grid(row=1, column=0, sticky="w")
+        self.btn_sizing = ttk.Button(bar, text="Yüzey boyutlarını düzenle",
+                                     command=self._edit_sizing, state="disabled")
+        self.btn_sizing.grid(row=1, column=1, sticky="e")
 
     # -- günlük ----------------------------------------------------------
     def _build_log(self, parent: ttk.Frame, row: int) -> None:
@@ -357,6 +368,10 @@ class AutoMeshApp:
             chosen_min_size=previous.chosen_min_size,
             chosen_max_size=previous.chosen_max_size,
             chosen_cells=previous.chosen_cells,
+            local_sizing_enabled=bool(self.var_local_sizing.get()),
+            sizing_divisions=dict(previous.sizing_divisions),
+            sizing_disabled=list(previous.sizing_disabled),
+            local_floor=previous.local_floor,
         )
         return self.settings
 
@@ -473,12 +488,63 @@ class AutoMeshApp:
             chosen.label, chosen.size_text(), chosen.cells_text()), "OK")
         for warning in chosen.warnings:
             self._append("! " + warning, "WARNING")
-        self._append("Şimdi '3. Mesh oluştur' ile devam edebilirsiniz.", "INFO")
         self.var_status.set("Kademe seçildi: {0}".format(chosen.label))
+        # Kademe seçildikten sonra yüzey boyutlarını gözden geçirme sırası.
+        self._last_metrics = run.metrics
+        self.btn_sizing.configure(
+            state="normal" if getattr(run.metrics, "face_groups", None) else "disabled")
+        if getattr(run.metrics, "face_groups", None) and self.var_local_sizing.get():
+            self._edit_sizing()
+        self._append("Şimdi '3. Mesh oluştur' ile devam edebilirsiniz.", "INFO")
+
+    def _edit_sizing(self) -> None:
+        """Yüzey gruplarının bölme sayılarını seçtir."""
+        metrics = getattr(self, "_last_metrics", None)
+        if metrics is None or not getattr(metrics, "face_groups", None):
+            messagebox.showinfo(
+                "AutoMesh",
+                "Önce '2. Ölçüm ve öneriler' ile geometriyi analiz edin.")
+            return
+        from ..planning.local_sizing import review_groups
+        from ..planning.sizing import plan_mesh
+        from ..units import resolve_display_unit
+        from .sizing_dialog import SizingDialog
+
+        settings = self._collect()
+        cfg = settings.to_config()
+        plan = plan_mesh(metrics, cfg)
+        reviews = review_groups(metrics.face_groups, plan, cfg)
+        if not reviews:
+            messagebox.showinfo("AutoMesh", "Boyut verilecek yüzey grubu yok.")
+            return
+
+        unit = resolve_display_unit(cfg.output.display_unit, metrics.diagonal)
+        result = SizingDialog(self.root, reviews, plan,
+                              cfg.local_sizing, unit).show()
+        if result is None:
+            self._append("Yüzey boyutları değiştirilmedi.", "INFO")
+            return
+        divisions, disabled, floor = result
+        self.settings.sizing_divisions = divisions
+        self.settings.sizing_disabled = disabled
+        self.settings.local_floor = floor
+        self.settings.save()
+        self.var_sizing.set(self.settings.sizing_summary())
+        self._append("Yüzey boyutları güncellendi:", "OK")
+        for review in review_groups(metrics.face_groups, plan,
+                                    self.settings.to_config()):
+            if review.enabled:
+                self._append("  {0}: {1:g} bölme -> {2}".format(
+                    review.name, review.divisions,
+                    format_length(review.size, unit)), "INFO")
+            else:
+                self._append("  {0}: kapalı".format(review.name), "WARNING")
 
     def _clear_choice(self) -> None:
         self.settings.clear_choice()
+        self.settings.clear_sizing_choices()
         self.var_choice.set(self.settings.chosen_summary())
+        self.var_sizing.set(self.settings.sizing_summary())
 
     def _append(self, text: str, tag: str = "INFO") -> None:
         self.text.configure(state="normal")

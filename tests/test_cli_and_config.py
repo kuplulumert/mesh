@@ -191,3 +191,37 @@ def test_cli_run_level_and_sizes_reach_the_config(step_file, tmp_path, monkeypat
     assert planning.override_max_size == pytest.approx(0.002)
     assert planning.override_growth_rate == pytest.approx(1.12)
     assert planning.override_layer_count == 3
+
+
+def test_cli_divisions_flag_reaches_the_config(step_file, tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run(geometry, cfg, out, cancel=None):
+        captured["cfg"] = cfg
+        from automesh.models import RunResult
+        return RunResult(success=True, run_dir=str(tmp_path), message="ok")
+
+    monkeypatch.setattr("automesh.orchestrator.run_agent", fake_run)
+    main(["run", step_file, "--dry-run",
+          "--divisions", "inlet=24", "--divisions", "automesh_curv_0p31mm=8",
+          "--min-local-size", "0.2mm"])
+    sizing = captured["cfg"].local_sizing
+    assert sizing.divisions == {"inlet": 24.0, "automesh_curv_0p31mm": 8.0}
+    assert sizing.absolute_floor == pytest.approx(0.0002)
+
+
+def test_cli_can_disable_local_sizing(step_file, tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run(geometry, cfg, out, cancel=None):
+        captured["cfg"] = cfg
+        from automesh.models import RunResult
+        return RunResult(success=True, run_dir=str(tmp_path), message="ok")
+
+    monkeypatch.setattr("automesh.orchestrator.run_agent", fake_run)
+    main(["run", step_file, "--dry-run", "--no-local-sizing"])
+    assert captured["cfg"].local_sizing.enabled is False
+
+
+def test_malformed_divisions_flag_is_rejected(step_file):
+    assert main(["run", step_file, "--dry-run", "--divisions", "inlet"]) == 2

@@ -74,6 +74,12 @@ class GuiSettings:
     chosen_max_size: float = 0.0       # m
     chosen_cells: int = 0
 
+    # "Yüzey boyutları" ekranında verilen kararlar
+    local_sizing_enabled: bool = True
+    sizing_divisions: Dict[str, float] = field(default_factory=dict)
+    sizing_disabled: List[str] = field(default_factory=list)
+    local_floor: float = 0.0           # m, hiçbir yerel boyut bundan ince olmasın
+
     # ------------------------------------------------------------------
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
@@ -148,6 +154,14 @@ class GuiSettings:
         if self.ansys_version.strip():
             cfg.fluent.product_version = self.ansys_version.strip()
 
+        cfg.local_sizing.enabled = bool(self.local_sizing_enabled)
+        if self.sizing_divisions:
+            cfg.local_sizing.divisions = dict(self.sizing_divisions)
+        if self.sizing_disabled:
+            cfg.local_sizing.disabled = list(self.sizing_disabled)
+        if self.local_floor > 0:
+            cfg.local_sizing.absolute_floor = float(self.local_floor)
+
         if self.chosen_min_size > 0 and self.chosen_max_size > 0:
             cfg.planning.override_min_size = self.chosen_min_size
             cfg.planning.override_max_size = self.chosen_max_size
@@ -218,6 +232,12 @@ class GuiSettings:
         if self.chosen_min_size > 0 and self.chosen_max_size > 0:
             parts += ["--min-size", "{0:.6g}".format(self.chosen_min_size),
                       "--max-size", "{0:.6g}".format(self.chosen_max_size)]
+        if not self.local_sizing_enabled:
+            parts.append("--no-local-sizing")
+        for name, value in sorted(self.sizing_divisions.items()):
+            parts += ["--divisions", "{0}={1:g}".format(name, value)]
+        if self.local_floor > 0:
+            parts += ["--min-local-size", "{0:.6g}".format(self.local_floor)]
         if self.output_dir.strip():
             parts += ["--out", _quote(self.output_dir.strip())]
         return " ".join(parts)
@@ -240,6 +260,25 @@ class GuiSettings:
         self.chosen_min_size = 0.0
         self.chosen_max_size = 0.0
         self.chosen_cells = 0
+
+    def sizing_summary(self) -> str:
+        """Ana penceredeki yüzey boyutu özeti."""
+        if not self.local_sizing_enabled:
+            return "Yüzey boyutları: kapalı (her yerde global boyut)"
+        if not self.sizing_divisions and not self.sizing_disabled:
+            return "Yüzey boyutları: otomatik (önerilen bölme sayıları)"
+        parts = []
+        if self.sizing_divisions:
+            parts.append("{0} grupta bölme değiştirildi".format(
+                len(self.sizing_divisions)))
+        if self.sizing_disabled:
+            parts.append("{0} kontrol kapatıldı".format(len(self.sizing_disabled)))
+        return "Yüzey boyutları: " + ", ".join(parts)
+
+    def clear_sizing_choices(self) -> None:
+        self.sizing_divisions = {}
+        self.sizing_disabled = []
+        self.local_floor = 0.0
 
 
 # --------------------------------------------------------------------------

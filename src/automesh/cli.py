@@ -31,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  automesh gui                      (masaüstü arayüzü)\n"
             "  automesh propose manifold.stp     (ölçümler + mesh kademeleri)\n"
             "  automesh run manifold.stp --level fine\n"
+            "  automesh run manifold.scdoc --divisions inlet=24\n"
         ),
     )
     parser.add_argument("--version", action="version",
@@ -74,6 +75,13 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--min-size", help="Minimum hücre boyutu, örn. 0.4mm veya 0.0004")
     run.add_argument("--max-size", help="Maksimum hücre boyutu, örn. 3mm")
     run.add_argument("--growth", type=float, help="Büyüme oranını zorla, örn. 1.15")
+    run.add_argument("--divisions", action="append", default=[], metavar="GRUP=N",
+                     help="Bir yüzey grubunun bölme sayısı, örn. inlet=24 "
+                          "(birden çok kez verilebilir)")
+    run.add_argument("--no-local-sizing", action="store_true",
+                     help="Yüzey gruplarına özel boyut verme")
+    run.add_argument("--min-local-size",
+                     help="Hiçbir yerel boyut bundan ince olmasın, örn. 0.2mm")
     run.add_argument("--layers", type=int, help="Prizma katman sayısını zorla (0 = kapalı)")
     run.add_argument("--max-cells", type=int, help="Hücre sayısı üst sınırı")
     run.add_argument("--target-cells", type=int, help="Hedeflenen hücre sayısı")
@@ -110,6 +118,9 @@ def build_parser() -> argparse.ArgumentParser:
     propose.add_argument("geometry")
     propose.add_argument("--json", action="store_true")
     propose.add_argument("--max-cells", type=int, help="Hücre bütçesi (uyarı için)")
+    propose.add_argument("--divisions", action="append", default=[],
+                         metavar="GRUP=N",
+                         help="Bir grubun bölme sayısını deneyerek gör")
 
     # ---- diagnose --------------------------------------------------------
     diagnose = sub.add_parser("diagnose", parents=[common],
@@ -178,6 +189,16 @@ def _apply_run_flags(cfg: Config, args: argparse.Namespace) -> Config:
         cfg.planning.override_growth_rate = args.growth
     if args.layers is not None:
         cfg.planning.override_layer_count = args.layers
+    if args.no_local_sizing:
+        cfg.local_sizing.enabled = False
+    if args.min_local_size:
+        cfg.local_sizing.absolute_floor = parse_length(args.min_local_size)
+    for item in args.divisions or []:
+        if "=" not in item:
+            raise ValueError(
+                "--divisions GRUP=N biçiminde olmalı, alınan: {0!r}".format(item))
+        name, value = item.split("=", 1)
+        cfg.local_sizing.divisions[name.strip()] = float(value)
     if args.max_cells:
         cfg.planning.max_cell_count = args.max_cells
     if args.target_cells:
@@ -264,6 +285,11 @@ def cmd_propose(args: argparse.Namespace) -> int:
     if getattr(args, "max_cells", None):
         cfg.planning.max_cell_count = args.max_cells
 
+    for item in getattr(args, "divisions", []) or []:
+        if "=" in item:
+            name, value = item.split("=", 1)
+            cfg.local_sizing.divisions[name.strip()] = float(value)
+
     metrics = analyze_geometry(args.geometry, cfg)
     proposals = build_proposals(metrics, cfg)
     if args.json:
@@ -271,15 +297,38 @@ def cmd_propose(args: argparse.Namespace) -> int:
             "geometry": metrics.to_dict(),
             "measurements": [m.__dict__ for m in measurements(metrics, cfg=cfg)],
             "proposals": [p.to_dict() for p in proposals],
+            "local_sizing": _local_sizing_payload(metrics, cfg),
         }, indent=2, ensure_ascii=False))
         return 0
     print()
     print(format_table(metrics, proposals))
     print()
+
+    if metrics.face_groups:
+        from .planning.local_sizing import format_review_table, review_groups
+        from .planning.sizing import plan_mesh
+        from .units import resolve_display_unit
+
+        plan = plan_mesh(metrics, cfg)
+        unit = resolve_display_unit(cfg.output.display_unit, metrics.diagonal)
+        print(format_review_table(review_groups(metrics.face_groups, plan, cfg),
+                                  plan, unit))
+        print()
+
     print("Seçtiğiniz kademeyle çalıştırmak için:")
     print('  automesh run "{0}" --level <kademe>'.format(args.geometry))
     print()
     return 0
+
+
+def _local_sizing_payload(metrics, cfg) -> list:
+    if not metrics.face_groups:
+        return []
+    from .planning.local_sizing import review_groups
+    from .planning.sizing import plan_mesh
+
+    plan = plan_mesh(metrics, cfg)
+    return [r.to_dict() for r in review_groups(metrics.face_groups, plan, cfg)]
 
 
 def cmd_diagnose(args: argparse.Namespace) -> int:

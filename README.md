@@ -123,6 +123,7 @@ Pencerede:
 | **Akış bilgisi** | y+, hız, yoğunluk, viskozite, karakteristik uzunluk — doldurursanız ilk katman yüksekliği hesaplanır |
 | **Çalıştırma** | Fluent penceresini göster (varsayılan açık), bitince Fluent açık kalsın, prova modu + senaryo, Claude danışmanı, ANSYS sürümü |
 | **Üç düğme** | `1. Geometriyi analiz et` → `2. Ölçüm ve öneriler` → `3. Mesh oluştur` |
+| **Yüzey boyutlarını düzenle** | Grupların bölme sayılarını seçme ekranını açar |
 | **Seçili kademe satırı** | Hangi mesh kademesini seçtiğinizi gösterir; "Seçimi temizle" ile otomatiğe döner |
 | **Günlük** | Agent'ın kararları canlı akar: teşhisler sarı, hatalar kırmızı, başarı yeşil |
 | **Durdur** | Çalışmayı bir sonraki adımda temizce keser; Fluent düzgün kapatılır ve rapor yine yazılır |
@@ -330,15 +331,27 @@ ve benzer gereksinimleri olanları tek kontrolde toplar.
 
 Her yüzey için üç büyüklük ayrı ayrı hesaplanır, **en zorlayıcı olan kazanır**:
 
-| Ölçüt | Nereden gelir | Kural | Varsayılan |
+| Ölçüt | Bölünen uzunluk | Rule of thumb | Neden |
 |---|---|---|---|
-| `curv` — eğrilik | yüzeyin eğrilik yarıçapı `r` | `2·pi·r / N` | N = 16 hücre/çevre |
-| `width` — dar bant | `2·alan / çevre` (fileto, sliver, ince şerit) | `genişlik / N` | N = 3 |
-| `gap` — ince kesit | gövdenin `2·Hacim/Alan` değeri | `kesit / N` | N = 3 |
+| `curv` — eğrilik | çevre `2·pi·r` | **16** hücre | Bir deliği düzgün dönmek için çevresinde 12-20 hücre gerekir |
+| `width` — dar bant | genişlik `2·alan/çevre` | **3** hücre | İnce bir bant enine 3 hücreden azsa tek hücreye ezilir |
+| `gap` — ince kesit | kesit `2·Hacim/Alan` | **3** hücre | Kanalın içinde profil çözülebilsin |
 
 Sonuç, yüzeyin **tipinden değil ölçülen büyüklüğünden** çıkar. 10 mm yarıçaplı
 ama 0.1 mm genişliğinde bir fileto şeridi, eğriliği kaba olmasına rağmen
 `width` ölçütünden 33 µm hücre alır.
+
+### Hücre boyutu = uzunluk / bölme sayısı
+
+Boyut doğrudan verilmez, **bölme sayısından** çıkar:
+
+```
+hücre boyutu = bölünen uzunluk / bölme sayısı
+```
+
+20 mm çapındaki bir giriş, çevresi 62.8 mm; 16'ya bölünce 3.93 mm hücre.
+Bölmeyi 24 yaparsanız 2.62 mm olur. Soru "kaç mm hücre?" değil,
+**"kaça böleyim?"** - mühendisin zaten düşündüğü dil.
 
 ### Gruplama ve isimlendirme
 
@@ -387,10 +400,43 @@ kapsam o grubun etiketi).
 | `automesh_curv_0p31mm` | agent | 12 | eğrilik yarıçapı 0.8 mm | **0.31 mm** |
 | *gruplanmayanlar* | — | — | — | *global 2.95 mm* |
 
+### Seçim ekranı
+
+Aşırı ince boyutlar Fluent'i zorlar ya da hücre sayısını patlatır. Bu yüzden
+kademe seçiminden sonra **bölme sayılarını gözden geçirme ekranı** açılır:
+
+| Grup | Kaynak | Ölçüm | Bölünen | Kaça böleyim? | Hücre | ~Hücre | Durum |
+|---|---|---|---|---|---|---|---|
+| `inlet` | sizin grubunuz | çap 20 mm | çevre 62.8 mm | **16** | 3.93 mm | 8.400 | uygun |
+| `automesh_curv_0p31mm` | agent | çap 1.6 mm | çevre 5.03 mm | **16** | 0.31 mm | 41.600 | uygun |
+| `automesh_width_0p03mm` | agent | 0.1 mm | genişlik 0.1 mm | **3** | 0.033 mm | 1.2 M | **riskli** |
+
+Her satırda bölme sayısını değiştirebilir, kontrolü tamamen kapatabilirsiniz;
+hücre boyutu, hücre tahmini ve risk **anında** güncellenir. Altta toplam
+yüzey hücresi tahmini ve "hiçbir boyut şundan ince olmasın" tabanı var.
+
+Risk göstergesi:
+
+| Durum | Ne zaman |
+|---|---|
+| **uygun** | global boyutun 60 katından kalın |
+| **dikkat** | 60-150 kat ince, ya da tek başına 2 M'den fazla yüzey hücresi |
+| **riskli** | 150 kattan ince - Fluent zorlanabilir, süre uzar |
+
+Komut satırında aynı kararlar:
+
+```bat
+automesh propose parca.scdoc                        :: tabloyu gör
+automesh run parca.scdoc --divisions inlet=24       :: bölmeyi değiştir
+automesh run parca.scdoc --min-local-size 0.2mm     :: taban koy
+automesh run parca.scdoc --no-local-sizing          :: hepsini kapat
+```
+
 ### Frenler
 
 - Global boyuta **yakın** kontroller eklenmez (faydası yok, sadece maliyet).
-- Hiçbir kontrol global maksimumun **1/200**'ünden ince olamaz.
+- Hiçbir kontrol global maksimumun **1/200**'ünden ince olamaz
+  (`min_size_ratio`), ayrıca kendi mutlak tabanınızı da koyabilirsiniz.
 - Gövde köşegeninin %3'ünden kaba gereksinimler zaten global boyutla çözülür,
   gruplanmaz.
 - Kontrol sayısı varsayılan 8 ile sınırlı.
@@ -400,14 +446,18 @@ kapsam o grubun etiketi).
 ```yaml
 local_sizing:
   enabled: true
-  cells_per_circle: 16.0      # eğrilik ölçütü: delik çevresinde kaç hücre
-  cells_across_width: 3.0     # dar bant ölçütü: bandın enine kaç hücre
-  cells_across_gap: 3.0       # ince kesit ölçütü: kesitte kaç hücre
+  cells_per_circle: 16.0      # eğrilik: çevre kaça bölünsün
+  cells_across_width: 3.0     # dar bant: genişlik kaça bölünsün
+  cells_across_gap: 3.0       # ince kesit: kesit kaça bölünsün
   max_controls: 8
   read_existing_groups: true  # sizin gruplarınızı oku (asla değiştirmez)
   size_existing_groups: true  # onlara da boyut öner
   max_useful_ratio: 0.03      # köşegenin %3'ünden kaba gereksinimler gruplanmaz
   min_size_ratio: 200.0       # en ince kontrol = global max / 200
+  absolute_floor: 0.0         # mutlak taban [m]; 0 -> yalnızca oran tabanı
+  warn_ratio: 60.0            # bu kattan ince: "dikkat"
+  high_risk_ratio: 150.0      # bu kattan ince: "riskli"
+  warn_face_cells: 2000000    # tek grup bu kadar hücre üretirse uyar
 ```
 
 ---
@@ -625,6 +675,7 @@ src/automesh/
     runner.py        İşi arka planda koşturan thread + günlük kuyruğu (Tk'sız)
     app.py           Tkinter ana penceresi (ince katman)
     proposals_dialog.py  Ölçüm ve kademe seçme penceresi
+    sizing_dialog.py     Yüzey gruplarının bölme sayısı seçme penceresi
 ```
 
 Arayüzün mantığı bilerek Tkinter'dan ayrı tutuldu: `state.py` ve `runner.py`
