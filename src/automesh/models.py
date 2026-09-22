@@ -107,15 +107,29 @@ class FaceGroup(_DictMixin):
     """
 
     name: str = ""                 # SpaceClaim'deki named selection adı
-    kind: str = ""                 # cylinder | cone | sphere | torus | plane | other
+    kind: str = ""                 # cylinder | cone | sphere | torus | plane | mixed
     face_count: int = 0
+
+    #: Boyutu hangi ölçüm belirledi: curvature | width | gap | existing
+    driver: str = ""
+    #: Betiğin hesapladığı hücre boyutu (m). 0 ise host tarafı yarıçaptan türetir.
+    recommended_size: float = 0.0
+    #: "auto" -> agent oluşturdu, "existing" -> kullanıcının grubu (dokunulmadı)
+    source: str = "auto"
+
     min_radius: float = 0.0        # m
     max_radius: float = 0.0        # m
-    representative_radius: float = 0.0  # m, boyut bundan hesaplanır
+    representative_radius: float = 0.0  # m
+    min_width: float = 0.0         # m, 2*alan/çevre - dar bant / sliver ölçüsü
+    min_gap: float = 0.0           # m, gövdenin ince kesit tahmini
     total_area: float = 0.0        # m^2
     min_face_size: float = 0.0     # m, sqrt(en küçük yüzey alanı)
     created: bool = True           # named selection gerçekten oluşturuldu mu
     note: str = ""
+
+    @property
+    def is_existing(self) -> bool:
+        return self.source == "existing"
 
 
 @dataclass

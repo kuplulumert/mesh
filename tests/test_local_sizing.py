@@ -120,12 +120,13 @@ def test_no_groups_means_no_controls():
 
 
 def test_plan_explains_each_control():
-    cfg = Config()
-    plan = plan_mesh(_metrics([_group()]), cfg)
+    """Notlar hangi grubun neden hangi boyutu aldığını söylemeli."""
+    plan = plan_mesh(_metrics([_group()]), Config())
     notes = " ".join(plan.notes)
     assert "automesh_cylinder_r0p80mm" in notes
     assert "12 yüzey" in notes
-    assert "çevrede 16 hücre" in notes
+    assert "eğrilik yarıçapı" in notes      # boyutu belirleyen ölçüt
+    assert "hücre" in notes
 
 
 def test_spaceclaim_params_follow_the_config():
@@ -198,3 +199,89 @@ def test_groups_survive_the_json_roundtrip():
     restored = GeometryMetrics.from_dict(metrics.to_dict())
     assert restored.face_groups[0].name == "automesh_cylinder_r0p80mm"
     assert restored.face_groups[0].representative_radius == pytest.approx(0.0008)
+
+
+# --------------------------------------------------------------------------
+# kullanıcının kendi grupları
+# --------------------------------------------------------------------------
+
+def _existing(name="inlet", size=0.0006, faces=2):
+    return FaceGroup(name=name, source="existing", driver="curv",
+                     face_count=faces, recommended_size=size,
+                     representative_radius=0.0015, created=True,
+                     note="kullanicinin grubu - degistirilmedi")
+
+
+def test_existing_groups_get_their_own_control():
+    plan = plan_mesh(_metrics([_existing()]), Config())
+    assert [s.name for s in plan.local_sizings] == ["inlet"]
+    assert plan.local_sizings[0].size == pytest.approx(0.0006)
+
+
+def test_existing_groups_are_marked_in_the_notes():
+    plan = plan_mesh(_metrics([_existing()]), Config())
+    notes = " ".join(plan.notes)
+    assert "sizin grubunuz" in notes and "değiştirilmedi" in notes
+
+
+def test_existing_groups_come_first_in_the_control_budget():
+    """Kontrol bütçesi dolarsa kullanıcının grubu elenmemeli."""
+    cfg = Config()
+    cfg.local_sizing.max_controls = 2
+    groups = [
+        FaceGroup(name="automesh_curv_a", recommended_size=1e-5, face_count=4),
+        FaceGroup(name="automesh_curv_b", recommended_size=2e-5, face_count=4),
+        _existing("outlet", size=3e-4),
+    ]
+    plan = plan_mesh(_metrics(groups), cfg)
+    names = [s.name for s in plan.local_sizings]
+    assert "outlet" in names
+    assert len(names) == 2
+
+
+def test_sizing_existing_groups_can_be_disabled():
+    cfg = Config()
+    cfg.local_sizing.size_existing_groups = False
+    plan = plan_mesh(_metrics([_existing(), _group()]), cfg)
+    names = [s.name for s in plan.local_sizings]
+    assert "inlet" not in names
+    assert "automesh_cylinder_r0p80mm" in names
+
+
+def test_recommended_size_wins_over_the_radius_formula():
+    """Betik ölçütleri yüzey yüzey hesapladı; onun sonucu kullanılmalı."""
+    group = FaceGroup(name="automesh_width_0p03mm", driver="width",
+                      face_count=5, recommended_size=3.3e-5, min_width=1e-4,
+                      representative_radius=0.01)
+    assert size_for_group(group, 16.0) == pytest.approx(3.3e-5)
+
+
+def test_falls_back_to_width_then_face_extent():
+    from_width = FaceGroup(name="x", min_width=0.0009)
+    assert size_for_group(from_width, 16.0) == pytest.approx(0.0003)
+    from_extent = FaceGroup(name="x", min_face_size=0.001)
+    assert size_for_group(from_extent, 16.0) == pytest.approx(0.0005)
+
+
+@pytest.mark.parametrize("driver,field,value,expected", [
+    ("curv", "representative_radius", 0.0008, "eğrilik yarıçapı"),
+    ("width", "min_width", 0.0001, "dar bant genişliği"),
+    ("gap", "min_gap", 0.0009, "ince kesit"),
+])
+def test_notes_name_the_driving_measurement(driver, field, value, expected):
+    group = FaceGroup(name="g", driver=driver, face_count=3,
+                      recommended_size=2e-4, **{field: value})
+    plan = plan_mesh(_metrics([group]), Config())
+    assert any(expected in note for note in plan.notes)
+
+
+def test_spaceclaim_params_carry_every_criterion():
+    cfg = Config()
+    cfg.local_sizing.cells_across_width = 4.0
+    cfg.local_sizing.cells_across_gap = 5.0
+    cfg.local_sizing.read_existing_groups = False
+    params = spaceclaim_params(cfg)
+    assert params["cells_per_circle"] == pytest.approx(16.0)
+    assert params["cells_across_width"] == pytest.approx(4.0)
+    assert params["cells_across_gap"] == pytest.approx(5.0)
+    assert params["read_existing_groups"] is False

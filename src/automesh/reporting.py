@@ -136,22 +136,25 @@ def build_markdown(agent: Any, result: RunResult) -> str:
     if plan.local_sizings or metrics.face_groups:
         lines.append("## 2b. Yüzey gruplarına özel boyutlar")
         lines.append("")
-        lines.append("SpaceClaim'de yüzeyler tipine ve eğrilik yarıçapına göre "
-                     "gruplandı; her grup Fluent'te kendi Face Size kontrolünü "
-                     "aldı. Gruplanmayan yüzeyler global boyutta kaldı.")
+        lines.append("Yüzeyler ölçülen büyüklüklere göre (eğrilik yarıçapı, "
+                     "dar bant genişliği, ince kesit) gruplandı; her grup "
+                     "Fluent'te kendi Face Size kontrolünü aldı. Gruplanmayan "
+                     "yüzeyler global boyutta kaldı. Sizin kendi named "
+                     "selection'larınız **değiştirilmedi**, yalnızca ölçülüp "
+                     "boyut önerildi.")
         lines.append("")
         if plan.local_sizings:
-            lines.append("| Grup (named selection) | Yüzey | En küçük yarıçap | "
-                         "Hücre boyutu |")
-            lines.append("|---|---|---|---|")
+            lines.append("| Grup (named selection) | Kaynak | Yüzey | "
+                         "Boyutu belirleyen | Hücre boyutu |")
+            lines.append("|---|---|---|---|---|")
             by_name = {g.name: g for g in metrics.face_groups}
             for sizing in plan.local_sizings:
                 group = by_name.get(sizing.name)
-                lines.append("| `{0}` | {1} | {2} | **{3}** |".format(
+                lines.append("| `{0}` | {1} | {2} | {3} | **{4}** |".format(
                     sizing.name,
+                    "sizin grubunuz" if group and group.is_existing else "agent",
                     group.face_count if group else "-",
-                    format_length(group.representative_radius, unit)
-                    if group and group.representative_radius else "-",
+                    _driver_label(group, unit),
                     format_length(sizing.size, unit)))
             lines.append("")
             lines.append("Karşılaştırma için global boyut: {0} - {1}".format(
@@ -240,6 +243,27 @@ def build_markdown(agent: Any, result: RunResult) -> str:
 
 
 # --------------------------------------------------------------------------
+
+_DRIVER_LABELS = {
+    "curv": "eğrilik yarıçapı {0}",
+    "width": "dar bant {0}",
+    "gap": "ince kesit {0}",
+}
+
+
+def _driver_label(group: Any, unit: str) -> str:
+    if group is None:
+        return "-"
+    value = {
+        "curv": group.representative_radius,
+        "width": group.min_width,
+        "gap": group.min_gap,
+    }.get(group.driver, 0.0)
+    template = _DRIVER_LABELS.get(group.driver)
+    if template and value > 0:
+        return template.format(format_length(value, unit))
+    return group.driver or "-"
+
 
 def _yesno(value: Optional[bool]) -> str:
     if value is None:

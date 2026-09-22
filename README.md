@@ -323,62 +323,92 @@ Fluent'ten `domain extents` alıp planı **yeniden** hesaplar.
 
 Global bir hücre boyutu her yere aynı davranır: 2 mm'lik bir deliği çözmek
 için mesh'i inceltirseniz düz duvarlar da gereksiz yere incelir ve hücre
-sayısı patlar. Agent bunun yerine yüzeyleri sınıflandırıp her sınıfa kendi
-boyutunu verir.
+sayısı patlar. Agent bunun yerine **her yüzeyin gerektirdiği boyutu ölçer**
+ve benzer gereksinimleri olanları tek kontrolde toplar.
 
-**SpaceClaim tarafında** (analiz sırasında, aynı headless koşuda):
+### Üç ölçüt
 
-1. Her yüzeyin tipi (silindir / koni / küre / torus / düzlem) ve eğrilik
-   yarıçapı okunur.
-2. Düzlemler atlanır - onlar global boyutta kalmalı.
-3. Kalanlar yarıçaplarına göre **kat-kat bantlara** ayrılır (varsayılan: her
-   bant bir öncekinin iki katı).
-4. Her bant için `Create NS` ile bir named selection oluşturulur:
-   `automesh_cylinder_r0p80mm` gibi.
-5. Model `.scdoc` olarak kaydedilir.
+Her yüzey için üç büyüklük ayrı ayrı hesaplanır, **en zorlayıcı olan kazanır**:
+
+| Ölçüt | Nereden gelir | Kural | Varsayılan |
+|---|---|---|---|
+| `curv` — eğrilik | yüzeyin eğrilik yarıçapı `r` | `2·pi·r / N` | N = 16 hücre/çevre |
+| `width` — dar bant | `2·alan / çevre` (fileto, sliver, ince şerit) | `genişlik / N` | N = 3 |
+| `gap` — ince kesit | gövdenin `2·Hacim/Alan` değeri | `kesit / N` | N = 3 |
+
+Sonuç, yüzeyin **tipinden değil ölçülen büyüklüğünden** çıkar. 10 mm yarıçaplı
+ama 0.1 mm genişliğinde bir fileto şeridi, eğriliği kaba olmasına rağmen
+`width` ölçütünden 33 µm hücre alır.
+
+### Gruplama ve isimlendirme
+
+Yüzeyler *gerektirdikleri hücre boyutuna* göre kat-kat bantlara ayrılır ve her
+bant bir named selection olur. Ad, doğrudan uygulanacak boyutu ve onu belirleyen
+ölçütü söyler:
+
+```
+automesh_curv_0p31mm     eğrilik 0.8 mm  -> 0.31 mm hücre
+automesh_width_0p03mm    dar bant 0.1 mm -> 0.033 mm hücre
+automesh_gap_0p30mm      ince kesit 0.9 mm -> 0.30 mm hücre
+```
+
+Aynı boyutu gerektiren farklı tipteki yüzeyler tek kontrolde birleşir —
+gereksiz kontrol açmanın maliyeti var, faydası yok.
+
+### Sizin kendi gruplarınız
+
+Dokümanda zaten named selection varsa (`inlet`, `outlet`, `wall-duct` …):
+
+- **Hiçbirine dokunulmaz.** Adı, üyeleri, hiçbiri değişmez.
+- İçerdikleri yüzeyler aynı üç ölçütle ölçülür ve o gruba **uygun bir face
+  size önerilir**.
+- Kontrol bütçesi dolarsa **önce sizin gruplarınız** yerini korur; otomatik
+  gruplar elenir.
+
+Raporda hangisinin sizin, hangisinin agent'ın olduğu ayrı sütunda yazar.
+
+### Fluent'e aktarım
+
+Her grup bir `Add Local Sizing` görevine dönüşür (`BOIExecution: Face Size`,
+kapsam o grubun etiketi).
 
 > **Neden .scdoc:** STEP named selection **taşımaz**. Gruplar varsa agent
 > dışa aktarımı otomatik olarak `.scdoc`'a çevirir; Fluent Meshing onu okuyup
 > grupları yüzey etiketi (face label) olarak alır. `export_format: auto`
 > varsayılanı bunu kendisi halleder.
 
-**Fluent tarafında** her grup bir `Add Local Sizing` görevine dönüşür
-(`BOIExecution: Face Size`, kapsam o grubun etiketi).
+Örnek bir çalışmadan:
 
-Boyut kuralı, özelliği çevresi boyunca çözmektir:
+| Grup | Kaynak | Yüzey | Boyutu belirleyen | Hücre boyutu |
+|---|---|---|---|---|
+| `inlet` | sizin grubunuz | 2 | eğrilik yarıçapı 1.5 mm | **0.6 mm** |
+| `automesh_width_0p03mm` | agent | 5 | dar bant 0.1 mm | **0.033 mm** |
+| `automesh_gap_0p30mm` | agent | 7 | ince kesit 0.9 mm | **0.30 mm** |
+| `automesh_curv_0p31mm` | agent | 12 | eğrilik yarıçapı 0.8 mm | **0.31 mm** |
+| *gruplanmayanlar* | — | — | — | *global 2.95 mm* |
 
-```
-hücre boyutu = 2·pi·r / (çevre başına hücre)     (varsayılan 16)
-```
+### Frenler
 
-16 hücre/çevre ile bu `0.39·r` eder. Örnek bir çalışmada:
+- Global boyuta **yakın** kontroller eklenmez (faydası yok, sadece maliyet).
+- Hiçbir kontrol global maksimumun **1/200**'ünden ince olamaz.
+- Gövde köşegeninin %3'ünden kaba gereksinimler zaten global boyutla çözülür,
+  gruplanmaz.
+- Kontrol sayısı varsayılan 8 ile sınırlı.
 
-| Grup | Yüzey | En küçük yarıçap | Hücre boyutu |
-|---|---|---|---|
-| `automesh_torus_r0p20mm` | 8 | 0.2 mm | **0.079 mm** |
-| `automesh_cylinder_r0p80mm` | 12 | 0.8 mm | **0.314 mm** |
-| `automesh_cylinder_r4p00mm` | 6 | 4 mm | **1.571 mm** |
-| *(gruplanmayan yüzeyler)* | - | - | *global 2.95 mm* |
-
-İki güvenlik freni var: global boyuta **yakın** kontroller eklenmez (faydası
-yoktur), ve hiçbir kontrol global maksimumun 1/200'ünden ince olamaz. Kontrol
-sayısı varsayılan 8 ile sınırlı - en ince gruplar önceliklidir, çünkü mesh'i
-asıl onlar zorlar.
-
-Ayarlar:
+### Ayarlar
 
 ```yaml
 local_sizing:
   enabled: true
-  cells_per_circle: 16       # delik çevresinde kaç hücre
-  max_controls: 8            # en fazla kaç kontrol
-  band_factor: 2.0           # yarıçap bantlarının oranı
-  radius_ceiling_ratio: 0.08 # gövdenin %8'inden büyük yarıçaplar gruplanmaz
-  min_size_ratio: 200.0      # en ince kontrol = global max / 200
+  cells_per_circle: 16.0      # eğrilik ölçütü: delik çevresinde kaç hücre
+  cells_across_width: 3.0     # dar bant ölçütü: bandın enine kaç hücre
+  cells_across_gap: 3.0       # ince kesit ölçütü: kesitte kaç hücre
+  max_controls: 8
+  read_existing_groups: true  # sizin gruplarınızı oku (asla değiştirmez)
+  size_existing_groups: true  # onlara da boyut öner
+  max_useful_ratio: 0.03      # köşegenin %3'ünden kaba gereksinimler gruplanmaz
+  min_size_ratio: 200.0       # en ince kontrol = global max / 200
 ```
-
-Hangi grubun neden hangi boyutu aldığı raporda ayrı bir bölümde yazar; bir
-grup SpaceClaim'de oluşturulamazsa o da sebebiyle birlikte görünür.
 
 ---
 
@@ -607,8 +637,12 @@ Testler: `python -m pytest` (176 test, ANSYS ve ekran gerektirmez).
 ## Sınırlar ve bilinen kısıtlar
 
 - **Yüzey gruplama yalnızca SpaceClaim backend'iyle çalışır.** STEP/STL
-  okuyucular yüzey tipi ve yarıçap bilgisini bu ayrıntıda vermez; o
+  okuyucular yüzey tipi, çevre ve yarıçap bilgisini bu ayrıntıda vermez; o
   dosyalarla global boyutlandırma devrede kalır.
+- **`gap` ölçütü gövde geneli bir tahmindir** (`2·Hacim/Alan`), yüzey yüzey
+  gerçek bir yakınlık (proximity) hesabı değildir. Gerçek yüzey-yüzey mesafesi
+  SpaceClaim API'sinde pahalı bir sorgu; bu yüzden kaba ama ucuz olan
+  kullanıldı. Fluent'in kendi proximity boyut fonksiyonu zaten devrede.
 - **SpaceClaim backend'i Windows'a ve lisansa bağlıdır.** Yoksa STEP/STL
   backend'leri devreye girer; bunlar hacim ve alanı bilmez, bu yüzden hücre
   sayısı tahmini sınır kutusuna dayanır (rapor bunu açıkça yazar).

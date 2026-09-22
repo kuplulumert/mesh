@@ -255,11 +255,35 @@ def geometry_radius(geometry):
     return 0.0
 
 
-def band_key(radius, anchor, factor):
-    """Yariçapi kat-kat bantlara ayir (bant indeksi)."""
-    if radius <= 0 or anchor <= 0:
+def face_perimeter(design_face):
+    """Yuzeyin cevresi (metre) - dar bant / sliver olcusu icin."""
+    total = 0.0
+    for getter in (lambda: design_face.Edges,
+                   lambda: design_face.Shape.Edges):
+        try:
+            edges = list(getter())
+        except Exception:
+            continue
+        for edge in edges:
+            try:
+                length = edge.Length
+            except Exception:
+                try:
+                    length = edge.Shape.Length
+                except Exception:
+                    length = 0.0
+            if length and length > 0:
+                total += float(length)
+        if total > 0:
+            return total
+    return 0.0
+
+
+def band_key(value, anchor, factor):
+    """Degeri kat-kat bantlara ayir (bant indeksi)."""
+    if value <= 0 or anchor <= 0:
         return None
-    ratio = radius / anchor
+    ratio = value / anchor
     index = 0
     while ratio >= factor:
         ratio = ratio / factor
@@ -282,6 +306,168 @@ def format_size(value_m):
         text = "%.1f" % (mm * 1000.0)
         unit = "um"
     return text.replace(".", "p") + unit
+
+
+def required_size(design_face, body_gap, params):
+    """Bir yuzeyin cozulebilmesi icin gereken hucre boyutu ve sebebi.
+
+    Uc olcut ayri ayri hesaplanir, en zorlayici olan kazanir:
+
+    ``curvature``  cevre boyunca N hucre  -> 2*pi*r / N
+    ``width``      dar bant / sliver      -> (2*alan/cevre) / N
+    ``gap``        ince kesit             -> (2*Hacim/Alan) / N
+
+    Boylece isimlendirme ve boyut, yuzeyin tipinden degil olculen
+    buyukluklerden cikar.
+    """
+    cells_circle = float(params.get("cells_per_circle", 16.0))
+    cells_width = float(params.get("cells_across_width", 3.0))
+    cells_gap = float(params.get("cells_across_gap", 3.0))
+
+    area = face_area(design_face)
+    geometry = face_geometry(design_face)
+    kind = geometry_name(geometry).lower()
+    radius = geometry_radius(geometry)
+
+    candidates = []
+    if radius > 0 and cells_circle > 0:
+        candidates.append((2.0 * math.pi * radius / cells_circle, "curv"))
+
+    perimeter = face_perimeter(design_face)
+    width = 0.0
+    if area > 0 and perimeter > 0:
+        width = 2.0 * area / perimeter
+        if cells_width > 0:
+            candidates.append((width / cells_width, "width"))
+
+    if body_gap > 0 and cells_gap > 0:
+        candidates.append((body_gap / cells_gap, "gap"))
+
+    if not candidates:
+        return 0.0, "", kind, radius, width
+
+    candidates.sort()
+    size, driver = candidates[0]
+    return size, driver, kind, radius, width
+
+
+def named_selection_list():
+    """Dokumandaki mevcut named selection'lari bul (bozmadan)."""
+    accessors = (
+        lambda: GetRootPart().GetAllNamedSelections(),          # noqa: F821
+        lambda: GetRootPart().GetDescendants[INamedSelection](),  # noqa: F821
+        lambda: GetRootPart().Document.NamedSelections,         # noqa: F821
+        lambda: Window.ActiveWindow.Document.NamedSelections,   # noqa: F821
+        lambda: GetRootPart().Groups,                           # noqa: F821
+    )
+    for accessor in accessors:
+        try:
+            found = list(accessor())
+            if found is not None:
+                return found
+        except Exception:
+            continue
+    return []
+
+
+def named_selection_faces(named_selection):
+    """Bir named selection'in icindeki DesignFace'ler."""
+    accessors = (
+        lambda: named_selection.Members,
+        lambda: named_selection.GetMembers[IDesignFace](),      # noqa: F821
+        lambda: named_selection.Members.Faces,
+        lambda: named_selection.Faces,
+    )
+    for accessor in accessors:
+        try:
+            members = list(accessor())
+        except Exception:
+            continue
+        faces = []
+        for member in members:
+            # Sadece yuzeyleri al; govde/kenar iceren gruplari atla.
+            if face_area(member) > 0 and face_geometry(member) is not None:
+                faces.append(member)
+        if faces:
+            return faces
+    return []
+
+
+def describe_existing_groups(params, body_gap_lookup, default_gap):
+    """Kullanicinin kendi gruplarini oku ve onlara boyut oner.
+
+    Bu gruplar **degistirilmez**: adi, uyeleri, hicbiri.  Yalnizca
+    icerdikleri yuzeyler olculup uygun bir hucre boyutu onerilir.
+    """
+    prefix = params.get("group_prefix", "automesh")
+    groups = []
+    for named_selection in named_selection_list():
+        try:
+            name = named_selection.GetName()
+        except Exception:
+            try:
+                name = named_selection.Name
+            except Exception:
+                continue
+        name = str(name)
+        if name.startswith(prefix):
+            continue                      # bizim urettiklerimiz
+        faces = named_selection_faces(named_selection)
+        if not faces:
+            continue
+
+        sizes = []
+        radii = []
+        widths = []
+        areas = []
+        drivers = {}
+        kinds = {}
+        for design_face in faces:
+            size, driver, kind, radius, width = required_size(
+                design_face, default_gap, params)
+            if size > 0:
+                sizes.append(size)
+                drivers[driver] = drivers.get(driver, 0) + 1
+            if radius > 0:
+                radii.append(radius)
+            if width > 0:
+                widths.append(width)
+            area = face_area(design_face)
+            if area > 0:
+                areas.append(area)
+            kinds[kind] = kinds.get(kind, 0) + 1
+
+        if not sizes:
+            continue
+        dominant_driver = ""
+        best = 0
+        for key in drivers:
+            if drivers[key] > best:
+                best, dominant_driver = drivers[key], key
+        dominant_kind = ""
+        best = 0
+        for key in kinds:
+            if kinds[key] > best:
+                best, dominant_kind = kinds[key], key
+
+        groups.append({
+            "name": name,
+            "kind": dominant_kind if len(kinds) == 1 else "mixed",
+            "driver": dominant_driver,
+            "source": "existing",
+            "face_count": len(faces),
+            "recommended_size": min(sizes),
+            "min_radius": min(radii) if radii else 0.0,
+            "max_radius": max(radii) if radii else 0.0,
+            "representative_radius": min(radii) if radii else 0.0,
+            "min_width": min(widths) if widths else 0.0,
+            "min_gap": default_gap,
+            "total_area": sum(areas),
+            "min_face_size": math.sqrt(min(areas)) if areas else 0.0,
+            "created": True,
+            "note": "kullanicinin grubu - degistirilmedi",
+        })
+    return groups
 
 
 def create_named_selection(faces, name):
@@ -325,10 +511,15 @@ def create_named_selection(faces, name):
         return True, "ad verilemedi"
 
 
-def build_face_groups(bodies, params, diagonal):
-    """Yuzeyleri tip ve yariçap bandina gore grupla, named selection yaz."""
-    enabled = params.get("group_faces", True)
-    if not enabled or diagonal <= 0:
+def build_face_groups(bodies, params, diagonal, body_gaps=None):
+    """Yuzeyleri OLCULEN buyukluklere gore grupla ve named selection yaz.
+
+    Gruplama ve isimlendirme yuzey tipine degil, yuzeyin gerektirdigi hucre
+    boyutuna ve o boyutu belirleyen olcute (egrilik / dar bant / ince kesit)
+    dayanir.  Boylece ad, dogrudan uygulanacak boyutu soyler:
+    ``automesh_curv_0p31mm``.
+    """
+    if not params.get("group_faces", True) or diagonal <= 0:
         return []
 
     prefix = params.get("group_prefix", "automesh")
@@ -336,67 +527,89 @@ def build_face_groups(bodies, params, diagonal):
     anchor = float(params.get("band_anchor", 1.0e-4))
     max_groups = int(params.get("max_groups", 8))
     min_faces = int(params.get("min_faces_per_group", 2))
-    # Govde boyutuna gore anlamsiz derecede buyuk yariçaplar gruplanmaz:
-    # onlar zaten global boyutla cozuluyor.
-    radius_ceiling = diagonal * float(params.get("radius_ceiling_ratio", 0.08))
+    # Govde boyutuna gore kaba kalan yuzeyler global boyutla zaten cozulur.
+    size_ceiling = diagonal * float(params.get("max_useful_ratio", 0.03))
+    body_gaps = body_gaps or {}
+    default_gap = 0.0
+    if body_gaps:
+        values = [v for v in body_gaps.values() if v > 0]
+        default_gap = min(values) if values else 0.0
 
     buckets = {}
-    for design_body in bodies:
+    for index, design_body in enumerate(bodies):
+        body_gap = body_gaps.get(index, default_gap)
         for design_face in design_faces(design_body):
-            geometry = face_geometry(design_face)
-            kind = geometry_name(geometry)
-            if kind in ("Plane", "Unknown"):
+            size, driver, kind, radius, width = required_size(
+                design_face, body_gap, params)
+            if size <= 0 or size > size_ceiling:
                 continue
-            radius = geometry_radius(geometry)
-            if radius <= 0 or radius > radius_ceiling:
+            band = band_key(size, anchor, factor)
+            if band is None:
                 continue
-            index = band_key(radius, anchor, factor)
-            if index is None:
-                continue
-            key = (kind.lower(), index)
+            key = (driver, band)
             bucket = buckets.get(key)
             if bucket is None:
-                bucket = {"kind": kind.lower(), "faces": [], "radii": [],
-                          "areas": []}
+                bucket = {"driver": driver, "faces": [], "sizes": [],
+                          "radii": [], "widths": [], "areas": [], "kinds": {}}
                 buckets[key] = bucket
             bucket["faces"].append(design_face)
-            bucket["radii"].append(radius)
-            bucket["areas"].append(face_area(design_face))
+            bucket["sizes"].append(size)
+            if radius > 0:
+                bucket["radii"].append(radius)
+            if width > 0:
+                bucket["widths"].append(width)
+            area = face_area(design_face)
+            if area > 0:
+                bucket["areas"].append(area)
+            bucket["kinds"][kind] = bucket["kinds"].get(kind, 0) + 1
 
     candidates = []
     for key in buckets:
         bucket = buckets[key]
         if len(bucket["faces"]) < min_faces:
             continue
-        radii = bucket["radii"]
+        kinds = bucket["kinds"]
+        dominant = ""
+        best = 0
+        for kind in kinds:
+            if kinds[kind] > best:
+                best, dominant = kinds[kind], kind
         candidates.append({
-            "kind": bucket["kind"],
+            "driver": bucket["driver"],
             "faces": bucket["faces"],
-            "min_radius": min(radii),
-            "max_radius": max(radii),
-            # En kucuk yariçap belirleyici: bandin en ince ozelligini cozmeliyiz.
-            "representative_radius": min(radii),
+            # Bandin en zorlayici degeri belirleyici: ortalama alinsaydi
+            # bandin en ince ozelligi cozulmeden kalirdi.
+            "recommended_size": min(bucket["sizes"]),
+            "kind": dominant if len(kinds) == 1 else "mixed",
+            "min_radius": min(bucket["radii"]) if bucket["radii"] else 0.0,
+            "max_radius": max(bucket["radii"]) if bucket["radii"] else 0.0,
+            "min_width": min(bucket["widths"]) if bucket["widths"] else 0.0,
+            "min_gap": body_gaps.get(0, default_gap),
             "total_area": sum(bucket["areas"]),
-            "min_face_size": math.sqrt(min([a for a in bucket["areas"] if a > 0])
-                                       ) if any(bucket["areas"]) else 0.0,
+            "min_face_size": (math.sqrt(min(bucket["areas"]))
+                              if bucket["areas"] else 0.0),
         })
 
-    # En kucuk yariçaplar once: mesh'i asil onlar zorluyor.
-    candidates.sort(key=lambda item: item["representative_radius"])
+    candidates.sort(key=lambda item: item["recommended_size"])
     candidates = candidates[:max_groups]
 
     groups = []
     for item in candidates:
-        name = "{0}_{1}_r{2}".format(prefix, item["kind"],
-                                     format_size(item["representative_radius"]))
+        name = "{0}_{1}_{2}".format(prefix, item["driver"],
+                                    format_size(item["recommended_size"]))
         ok, note = create_named_selection(item["faces"], name)
         groups.append({
             "name": name,
             "kind": item["kind"],
+            "driver": item["driver"],
+            "source": "auto",
             "face_count": len(item["faces"]),
+            "recommended_size": item["recommended_size"],
             "min_radius": item["min_radius"],
             "max_radius": item["max_radius"],
-            "representative_radius": item["representative_radius"],
+            "representative_radius": item["min_radius"],
+            "min_width": item["min_width"],
+            "min_gap": item["min_gap"],
             "total_area": item["total_area"],
             "min_face_size": item["min_face_size"],
             "created": bool(ok),
@@ -434,9 +647,10 @@ def analyze(params):
     all_edge_lengths = []
     radii = []
     thin_sections = []
+    body_gaps = {}          # govde indeksi -> ince kesit tahmini (m)
     bbox = [None, None, None, None, None, None]
 
-    for design_body in bodies:
+    for body_index, design_body in enumerate(bodies):
         try:
             shape = design_body.Shape
         except Exception:
@@ -515,7 +729,9 @@ def analyze(params):
             info["min_edge_length"] = min(body_edge_lengths)
         if area > 0 and volume > 0:
             # ince cidar / kanal yaklasik kalinligi
-            thin_sections.append(2.0 * volume / area)
+            gap = 2.0 * volume / area
+            thin_sections.append(gap)
+            body_gaps[body_index] = gap
 
         result["bodies"].append(info)
 
@@ -561,12 +777,25 @@ def analyze(params):
         diagonal = math.sqrt(sum([(bbox[i + 3] - bbox[i]) ** 2 for i in range(3)]))
     except Exception:
         diagonal = 0.0
+    groups = []
     try:
-        result["face_groups"] = build_face_groups(bodies, params, diagonal)
+        groups = build_face_groups(bodies, params, diagonal, body_gaps)
     except Exception:
-        result["face_groups"] = []
         result["warnings"].append(
             "Yuzey gruplama basarisiz: %s" % traceback.format_exc().splitlines()[-1])
+
+    # Kullanicinin kendi gruplari: okunur, boyut onerilir, ASLA degistirilmez.
+    if params.get("read_existing_groups", True):
+        try:
+            default_gap = min(thin_sections) if thin_sections else 0.0
+            existing = describe_existing_groups(params, body_gaps, default_gap)
+            if existing:
+                groups = list(existing) + list(groups)
+        except Exception:
+            result["warnings"].append(
+                "Mevcut named selection'lar okunamadi: %s"
+                % traceback.format_exc().splitlines()[-1])
+    result["face_groups"] = groups
 
     # ---- disari aktarim ------------------------------------------------
     # Named selection olusturduysak STEP ise yaramaz: STEP grup tasimaz.

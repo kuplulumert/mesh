@@ -133,8 +133,19 @@ class LocalSizingSettings:
 
     enabled: bool = True
     name_prefix: str = "automesh"
-    #: Bir deliğin/filetonun çevresinde istenen hücre sayısı.
+    #: Bir deliğin/filetonun çevresinde istenen hücre sayısı (curvature ölçütü).
     cells_per_circle: float = 16.0
+    #: Dar bir bandın (2·alan/çevre) enine istenen hücre sayısı (width ölçütü).
+    cells_across_width: float = 3.0
+    #: İnce kesitte (2·Hacim/Alan) istenen hücre sayısı (gap ölçütü).
+    cells_across_gap: float = 3.0
+    #: Gövde köşegeninin bu oranından kaba boyutlar gruplanmaz.
+    max_useful_ratio: float = 0.03
+    #: Kullanıcının kendi named selection'larını oku ve onlara da boyut öner.
+    #: Bu gruplar asla değiştirilmez; yalnızca ölçülüp boyut önerilir.
+    read_existing_groups: bool = True
+    #: Mevcut gruplar için de Face Size kontrolü üretilsin mi.
+    size_existing_groups: bool = True
     #: En fazla kaç kontrol üretilsin (her biri mesh süresini uzatır).
     max_controls: int = 8
     #: Yarıçap bantlarının oranı (2.0 -> her bant bir öncekinin iki katı).

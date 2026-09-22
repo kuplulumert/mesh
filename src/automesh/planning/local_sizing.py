@@ -26,11 +26,19 @@ from ..units import format_length
 
 
 def size_for_group(group: FaceGroup, cells_per_circle: float) -> float:
-    """Bir grubun çözülebilmesi için gereken hücre boyutu (metre)."""
+    """Bir grubun çözülebilmesi için gereken hücre boyutu (metre).
+
+    SpaceClaim betiği eğrilik, dar bant ve ince kesit ölçütlerini yüzey yüzey
+    hesaplayıp en zorlayıcısını seçtiği için normalde o değeri kullanırız.
+    Eski kayıtlarda (ya da betik hesaplayamadıysa) yarıçaptan türetilir.
+    """
+    if group.recommended_size > 0:
+        return group.recommended_size
     radius = group.representative_radius
     if radius > 0 and cells_per_circle > 0:
         return 2.0 * math.pi * radius / cells_per_circle
-    # Yarıçap yoksa en küçük yüzeyin kenarından tahmin et.
+    if group.min_width > 0:
+        return group.min_width / 3.0
     if group.min_face_size > 0:
         return group.min_face_size / 2.0
     return 0.0
@@ -58,7 +66,19 @@ def build_local_sizings(
     # Global boyuta yakın bir kontrolün hiçbir etkisi olmaz; onları eleriz.
     useful_ceiling = plan.max_size * settings.skip_above_ratio
 
-    for group in sorted(groups, key=lambda g: g.representative_radius):
+    # Kullanıcının kendi grupları önce gelir: onlar açık bir niyet ifadesi,
+    # kontrol bütçesi dolarsa elenmemeliler.  Sonra otomatik gruplar, en
+    # zorlayıcıdan başlayarak.
+    ordered = (
+        [g for g in groups if g.is_existing]
+        + sorted((g for g in groups if not g.is_existing),
+                 key=lambda g: size_for_group(g, settings.cells_per_circle)
+                 or float("inf"))
+    )
+
+    for group in ordered:
+        if group.is_existing and not settings.size_existing_groups:
+            continue
         if not group.created:
             notes.append(
                 "'{0}' grubu SpaceClaim'de oluşturulamadı, atlandı ({1}).".format(
@@ -90,12 +110,12 @@ def build_local_sizings(
             size_control_type="Face Size",
             growth_rate=plan.growth_rate,
         ))
-        notes.append(
-            "'{0}': {1} yüzey, en küçük yarıçap {2} -> hücre {3} "
-            "(çevrede {4:.0f} hücre).".format(
-                group.name, group.face_count,
-                format_length(group.representative_radius, unit),
-                format_length(clamped, unit), settings.cells_per_circle))
+        notes.append("'{0}'{1}: {2} yüzey, {3} -> hücre {4}.".format(
+            group.name,
+            " (sizin grubunuz, değiştirilmedi)" if group.is_existing else "",
+            group.face_count,
+            _driver_text(group, unit),
+            format_length(clamped, unit)))
 
         if len(sizings) >= settings.max_controls:
             notes.append(
@@ -117,7 +137,35 @@ def spaceclaim_params(cfg: Config) -> dict:
         "max_groups": int(settings.max_controls),
         "min_faces_per_group": int(settings.min_faces_per_group),
         "radius_ceiling_ratio": float(settings.radius_ceiling_ratio),
+        "cells_per_circle": float(settings.cells_per_circle),
+        "cells_across_width": float(settings.cells_across_width),
+        "cells_across_gap": float(settings.cells_across_gap),
+        "max_useful_ratio": float(settings.max_useful_ratio),
+        "read_existing_groups": bool(settings.read_existing_groups),
     }
+
+
+_DRIVER_TEXT = {
+    "curv": "eğrilik yarıçapı {0}",
+    "width": "dar bant genişliği {0}",
+    "gap": "ince kesit {0}",
+}
+
+
+def _driver_text(group: FaceGroup, unit: str) -> str:
+    """Boyutu neyin belirlediğini insan diliyle yaz."""
+    value = {
+        "curv": group.representative_radius,
+        "width": group.min_width,
+        "gap": group.min_gap,
+    }.get(group.driver, 0.0)
+    template = _DRIVER_TEXT.get(group.driver)
+    if template and value > 0:
+        return template.format(format_length(value, unit))
+    if group.representative_radius > 0:
+        return "eğrilik yarıçapı {0}".format(
+            format_length(group.representative_radius, unit))
+    return "ölçülen boyut"
 
 
 def summarise(sizings: List[LocalSizing], unit: str) -> List[str]:

@@ -50,19 +50,26 @@ planning:
   size_min_max_ratio_cap: 500.0
 
 # Yüzey gruplarına özel hücre boyutu.
-# SpaceClaim'de yüzeyler tipine/yarıçapına göre gruplanır (named selection),
-# her grup Fluent'te kendi Face Size kontrolünü alır.
+# Her yüzeyin gerektirdiği boyut üç ölçütle ölçülür (eğrilik / dar bant /
+# ince kesit), en zorlayıcı olan kazanır; benzer gereksinimler tek grupta
+# toplanıp SpaceClaim'de named selection olarak yazılır.
 local_sizing:
   enabled: true
   name_prefix: automesh
-  cells_per_circle: 16.0      # delik/fileto çevresinde istenen hücre sayısı
+  cells_per_circle: 16.0      # eğrilik: delik/fileto çevresinde kaç hücre
+  cells_across_width: 3.0     # dar bant (2*alan/çevre) enine kaç hücre
+  cells_across_gap: 3.0       # ince kesit (2*Hacim/Alan) içinde kaç hücre
   max_controls: 8             # en fazla kaç kontrol (her biri süreyi uzatır)
-  band_factor: 2.0            # yarıçap bantlarının oranı
-  band_anchor: 1.0e-04        # bantlamanın başlangıç yarıçapı [m]
+  band_factor: 2.0            # boyut bantlarının oranı
+  band_anchor: 1.0e-04        # bantlamanın başlangıç boyutu [m]
   min_faces_per_group: 2      # bir grup için gereken en az yüzey
-  radius_ceiling_ratio: 0.08  # köşegenin bu oranından büyük yarıçaplar gruplanmaz
+  max_useful_ratio: 0.03      # köşegenin bu oranından kaba gereksinimler gruplanmaz
   min_size_ratio: 200.0       # en ince kontrol = global max / bu
-  skip_above_ratio: 0.9       # global boyutun bu oranına yakın kontroller eklenmez
+  skip_above_ratio: 0.9       # global boyuta bu kadar yakın kontroller eklenmez
+  # Sizin kendi named selection'larınız:
+  read_existing_groups: true  # okunur (ASLA değiştirilmez)
+  size_existing_groups: true  # onlara da uygun face size önerilir
+  radius_ceiling_ratio: 0.08  # (eski ölçüt, geriye dönük uyumluluk için)
 
 quality:
   # Hacim ağı
