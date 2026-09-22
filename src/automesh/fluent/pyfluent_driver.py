@@ -74,7 +74,10 @@ class PyFluentDriver(FluentDriver):
             "processor_count": settings.processor_count,
             "dimension": settings.dimension,
             "cwd": self.work_dir,
-            "cleanup_on_exit": settings.cleanup_on_exit,
+            # Fluent'i açık bırakacaksak PyFluent süreç sonunda onu
+            # öldürmemeli, yoksa pencere hemen kapanır.
+            "cleanup_on_exit": (settings.cleanup_on_exit
+                                and not settings.keep_open_after_run),
             "start_timeout": settings.launch_timeout_s,
         }
         if settings.product_version:

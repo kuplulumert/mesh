@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..config import Config
 from ..models import GeometryMetrics, MeshPlan
-from ..units import format_length
+from ..units import format_length, resolve_display_unit
 from .sizing import effective_area, effective_volume, estimate_cell_count, plan_mesh
 
 #: Fluent Meshing'in kabaca milyon hücre başına istediği bellek.
@@ -52,9 +52,12 @@ class Measurement:
     note: str = ""
 
 
-def measurements(metrics: GeometryMetrics, unit: Optional[str] = None) -> List[Measurement]:
+def measurements(metrics: GeometryMetrics, unit: Optional[str] = None,
+                 cfg: Optional[Config] = None) -> List[Measurement]:
     """Kullanıcıya gösterilecek "uzunluklar bunlar" tablosu."""
-    unit = unit or metrics.length_unit_hint or "m"
+    if unit is None:
+        setting = cfg.output.display_unit if cfg is not None else "mm"
+        unit = resolve_display_unit(setting, metrics.diagonal)
     dx, dy, dz = metrics.bbox.sizes
     rows: List[Measurement] = [
         Measurement("Sınır kutusu", "{0} x {1} x {2}".format(
@@ -120,6 +123,8 @@ class Proposal:
     diagonal_divisor: float = 0.0
     rationale: str = ""
     warnings: List[str] = field(default_factory=list)
+    #: Ekranda gösterim birimi (Fluent'e giden birimden bağımsız).
+    display_unit: str = "mm"
 
     # ------------------------------------------------------------------
     @property
@@ -129,7 +134,7 @@ class Proposal:
             "bütçe" in w for w in self.warnings)
 
     def size_text(self) -> str:
-        unit = self.plan.length_unit
+        unit = self.display_unit or self.plan.length_unit
         return "{0} - {1}".format(format_length(self.plan.min_size, unit),
                                   format_length(self.plan.max_size, unit))
 
@@ -161,6 +166,7 @@ def build_proposals(metrics: GeometryMetrics, cfg: Config,
     base = plan_mesh(metrics, base_cfg)
 
     limit = cfg.planning.max_cell_count or 0
+    display_unit = resolve_display_unit(cfg.output.display_unit, metrics.diagonal)
     proposals: List[Proposal] = []
     for key, label, scale, description in levels:
         plan = base.copy()
@@ -172,6 +178,7 @@ def build_proposals(metrics: GeometryMetrics, cfg: Config,
 
         proposal = Proposal(
             key=key, label=label, scale=scale, plan=plan,
+            display_unit=display_unit,
             recommended=(key == "balanced"),
             cells=plan.estimated_cell_count,
             ram_gb=plan.estimated_cell_count / 1_000_000.0 * GB_PER_MILLION_CELLS,
@@ -243,10 +250,13 @@ def _yesno(value: Optional[bool]) -> str:
 
 # --------------------------------------------------------------------------
 
-def format_table(metrics: GeometryMetrics, proposals: List[Proposal]) -> str:
+def format_table(metrics: GeometryMetrics, proposals: List[Proposal],
+                 unit: Optional[str] = None) -> str:
     """Konsol için ölçüm + öneri tablosu."""
+    if unit is None and proposals:
+        unit = proposals[0].display_unit
     lines: List[str] = ["Ölçümler", "-" * 72]
-    for row in measurements(metrics):
+    for row in measurements(metrics, unit):
         note = "   ({0})".format(row.note) if row.note else ""
         lines.append("  {0:<26} {1}{2}".format(row.label, row.value, note))
 

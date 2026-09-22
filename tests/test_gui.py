@@ -317,3 +317,78 @@ def test_chosen_level_appears_in_the_equivalent_command(step_file):
     command = settings.equivalent_command()
     assert "--min-size 0.001" in command
     assert "--max-size 0.002" in command
+
+
+# --------------------------------------------------------------------------
+# gösterim birimi ve Fluent penceresi
+# --------------------------------------------------------------------------
+
+def test_display_unit_defaults_to_mm_and_reaches_the_engine(step_file):
+    settings = GuiSettings(geometry_path=step_file)
+    assert settings.display_unit == "mm"
+    assert settings.to_config().output.display_unit == "mm"
+    assert GuiSettings(geometry_path=step_file,
+                       display_unit="auto").to_config().output.display_unit == "auto"
+
+
+def test_display_unit_does_not_change_what_fluent_is_told(step_file):
+    """Gösterim birimi mm olsa da Fluent'e dosyanın gerçek birimi gider.
+
+    Aksi halde metre cinsinden bir model 1000 kat yanlış ölçeklenirdi.
+    """
+    from automesh.geometry import analyze_geometry
+    from automesh.planning.sizing import plan_mesh
+
+    settings = GuiSettings(geometry_path=step_file, length_unit="m",
+                           display_unit="mm")
+    cfg = settings.to_config()
+    metrics = analyze_geometry(step_file, cfg)
+    plan = plan_mesh(metrics, cfg)
+    assert plan.length_unit == "m"            # Fluent'e giden
+    assert cfg.output.display_unit == "mm"    # ekranda görünen
+
+
+def test_unknown_units_are_rejected(step_file):
+    problems = GuiSettings(geometry_path=step_file, display_unit="fersah").validate()
+    assert any("Gösterim birimi" in p for p in problems)
+    problems = GuiSettings(geometry_path=step_file, length_unit="arşın").validate()
+    assert any("Geometri birimi" in p for p in problems)
+
+
+def test_fluent_window_is_on_by_default(step_file):
+    """Kullanıcı meshlemeyi izlemek istiyor - varsayılan açık."""
+    cfg = GuiSettings(geometry_path=step_file).to_config()
+    assert cfg.fluent.ui_mode == "gui"
+    assert cfg.fluent.show_gui is True
+
+
+def test_keep_open_forces_the_window_and_survives_exit(step_file):
+    cfg = GuiSettings(geometry_path=step_file, show_fluent_gui=False,
+                      keep_fluent_open=True).to_config()
+    assert cfg.fluent.keep_open_after_run is True
+    assert cfg.fluent.ui_mode == "gui"        # açık kalacaksa görünür olmalı
+    command = GuiSettings(geometry_path=step_file,
+                          keep_fluent_open=True).equivalent_command()
+    assert "--keep-open" in command
+    assert "--gui" not in command             # --keep-open zaten kapsıyor
+
+
+def test_keep_open_leaves_the_session_alive(step_file, cfg, tmp_path):
+    """Çalışma bitince sürücü kapatılmamalı."""
+    from automesh.orchestrator import AutoMeshAgent
+
+    cfg.fluent.keep_open_after_run = True
+    agent = AutoMeshAgent(step_file, cfg, str(tmp_path / "run"))
+    result = agent.run()
+    assert result.success
+    assert agent.driver is not None
+    assert agent.driver.is_alive() is True    # açık bırakıldı
+    agent.driver.close()
+
+
+def test_default_closes_the_session(step_file, cfg, tmp_path):
+    from automesh.orchestrator import AutoMeshAgent
+
+    agent = AutoMeshAgent(step_file, cfg, str(tmp_path / "run"))
+    agent.run()
+    assert agent.driver is None or not agent.driver.is_alive()

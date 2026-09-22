@@ -80,6 +80,23 @@ def pick_working_unit(bbox_diagonal_m: float) -> str:
     return "m"
 
 
+def resolve_display_unit(setting: str, diagonal_m: float = 0.0) -> str:
+    """Ekranda/raporda kullanılacak birimi seç.
+
+    Bu, Fluent'e içe aktarma sırasında bildirilen birimden **ayrıdır**:
+    orası dosyanın gerçek birimi olmak zorunda, yoksa geometri yanlış
+    ölçeklenir.  Burası yalnızca insanın okuduğu sayıyı biçimlendirir.
+    """
+    value = (setting or "").strip().lower()
+    if not value or value == "auto":
+        return pick_working_unit(diagonal_m)
+    return normalise(value)
+
+
 def format_length(value_m: float, unit: str) -> str:
-    """Human readable ``value`` (metres) rendered in ``unit``."""
-    return "{0:.6g} {1}".format(from_metres(value_m, unit), normalise(unit))
+    """Human readable ``value`` (metres) rendered in ``unit``.
+
+    Four significant digits: enough to distinguish 0.6967 mm from 0.7 mm,
+    short enough to read in a table.
+    """
+    return "{0:.4g} {1}".format(from_metres(value_m, unit), normalise(unit))

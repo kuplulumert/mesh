@@ -56,7 +56,10 @@ def build_parser() -> argparse.ArgumentParser:
         "clean", "realistic", "dirty", "prism", "memory", "stubborn"),
         help="--dry-run için simülasyon senaryosu")
     run.add_argument("--cores", type=int, help="Fluent çekirdek sayısı")
-    run.add_argument("--gui", action="store_true", help="Fluent arayüzünü göster")
+    run.add_argument("--gui", action="store_true",
+                     help="Fluent arayüzünü göster (meshlemeyi canlı izle)")
+    run.add_argument("--keep-open", action="store_true",
+                     help="Bitince Fluent'i açık bırak (ağı incelemek için)")
     run.add_argument("--version-ansys", dest="ansys_version",
                      help="ANSYS sürümü, örn. 24.2.0")
     run.add_argument("--workflow", choices=("auto", "watertight", "fault-tolerant"),
@@ -81,7 +84,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--density", type=float, help="Yoğunluk [kg/m3]")
     run.add_argument("--viscosity", type=float, help="Dinamik viskozite [Pa.s]")
     run.add_argument("--length", type=float, help="Karakteristik uzunluk [m]")
-    run.add_argument("--unit", help="Geometri uzunluk birimi (m, mm, in ...)")
+    run.add_argument("--unit", help="Geometrinin gerçek birimi (Fluent'e bildirilir)")
+    run.add_argument("--show-unit", dest="display_unit",
+                     help="Ekranda/raporda gösterim birimi (varsayılan mm, 'auto' da olur)")
     run.add_argument("--advisor", action="store_true",
                      help="Bilinmeyen hatalarda Claude danışmanını kullan")
 
@@ -143,6 +148,10 @@ def _apply_run_flags(cfg: Config, args: argparse.Namespace) -> Config:
     if args.gui:
         cfg.fluent.show_gui = True
         cfg.fluent.ui_mode = "gui"
+    if args.keep_open:
+        cfg.fluent.keep_open_after_run = True
+        cfg.fluent.show_gui = True
+        cfg.fluent.ui_mode = "gui"
     if args.ansys_version:
         cfg.fluent.product_version = args.ansys_version
     if args.workflow:
@@ -179,6 +188,8 @@ def _apply_run_flags(cfg: Config, args: argparse.Namespace) -> Config:
         cfg.geometry.characteristic_length = args.length
     if args.unit:
         cfg.geometry.length_unit = args.unit
+    if args.display_unit:
+        cfg.output.display_unit = args.display_unit
     if args.advisor:
         cfg.advisor.enabled = True
     return cfg
@@ -208,7 +219,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(metrics.to_dict(), indent=2, ensure_ascii=False))
         return 0
-    _print_metrics(metrics)
+    _print_metrics(metrics, cfg)
     return 0
 
 
@@ -230,8 +241,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
         print(json.dumps({"geometry": metrics.to_dict(), "plan": plan.to_dict()},
                          indent=2, ensure_ascii=False))
         return 0
-    _print_metrics(metrics)
-    _print_plan(plan)
+    _print_metrics(metrics, cfg)
+    _print_plan(plan, cfg, metrics.diagonal)
     return 0
 
 
@@ -248,7 +259,7 @@ def cmd_propose(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps({
             "geometry": metrics.to_dict(),
-            "measurements": [m.__dict__ for m in measurements(metrics)],
+            "measurements": [m.__dict__ for m in measurements(metrics, cfg=cfg)],
             "proposals": [p.to_dict() for p in proposals],
         }, indent=2, ensure_ascii=False))
         return 0
@@ -337,10 +348,11 @@ def parse_length(text: str) -> float:
     return float(raw)
 
 
-def _print_metrics(metrics) -> None:
-    from .units import format_length
+def _print_metrics(metrics, cfg=None) -> None:
+    from .units import format_length, resolve_display_unit
 
-    unit = metrics.length_unit_hint or "m"
+    setting = cfg.output.display_unit if cfg is not None else "mm"
+    unit = resolve_display_unit(setting, metrics.diagonal)
     dx, dy, dz = metrics.bbox.sizes
     print("Geometri analizi")
     print("  Kaynak            : {0}".format(os.path.basename(metrics.source_path)))
@@ -366,10 +378,11 @@ def _print_metrics(metrics) -> None:
     print()
 
 
-def _print_plan(plan) -> None:
-    from .units import format_length
+def _print_plan(plan, cfg=None, diagonal=0.0) -> None:
+    from .units import format_length, resolve_display_unit
 
-    unit = plan.length_unit
+    setting = cfg.output.display_unit if cfg is not None else "mm"
+    unit = resolve_display_unit(setting, diagonal or plan.max_size * 100)
     print("Mesh planı")
     print("  Akış              : {0}".format(plan.workflow.value))
     print("  Min / max boyut   : {0} / {1}".format(

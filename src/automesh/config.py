@@ -59,6 +59,9 @@ class FluentSettings:
     dimension: int = 3
     launch_timeout_s: int = 600
     cleanup_on_exit: bool = True
+    #: Çalışma bitince Fluent'i açık bırak - ağı orada incelemek için.
+    #: Fluent'i sonra elle kapatmanız gerekir.
+    keep_open_after_run: bool = False
     env: Dict[str, str] = field(default_factory=dict)
     additional_arguments: str = ""
     awp_root: Optional[str] = None             # AWP_ROOTxxx override
@@ -152,6 +155,10 @@ class OutputSettings:
     write_intermediate: bool = True            # save after surface mesh too
     keep_transcript: bool = True
     report_language: str = "tr"                # tr | en
+    #: Ekranda ve raporda uzunlukların gösterileceği birim.
+    #: Fluent'e bildirilen içe aktarma biriminden bağımsızdır.
+    #: "auto" -> model boyutuna göre seçilir.
+    display_unit: str = "mm"
 
 
 @dataclass

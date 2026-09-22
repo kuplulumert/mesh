@@ -22,7 +22,14 @@ from tkinter import filedialog, messagebox, ttk
 
 from .. import __version__
 from .runner import DONE, ERROR, LOG, BackgroundRun
-from .state import FILE_TYPES, FILLS, SCENARIOS, WORKFLOWS, GuiSettings
+from .state import (
+    DISPLAY_UNITS,
+    FILE_TYPES,
+    FILLS,
+    SCENARIOS,
+    WORKFLOWS,
+    GuiSettings,
+)
 
 PAD = 8
 
@@ -58,9 +65,11 @@ class AutoMeshApp:
         self.var_max_cells = tk.IntVar(value=s.max_cells)
         self.var_attempts = tk.IntVar(value=s.attempts)
         self.var_unit = tk.StringVar(value=s.length_unit)
+        self.var_display_unit = tk.StringVar(value=s.display_unit or "mm")
         self.var_ansys = tk.StringVar(value=s.ansys_version)
         self.var_bl = tk.BooleanVar(value=s.boundary_layers)
         self.var_fluent_gui = tk.BooleanVar(value=s.show_fluent_gui)
+        self.var_keep_open = tk.BooleanVar(value=s.keep_fluent_open)
         self.var_dry_run = tk.BooleanVar(value=s.dry_run)
         self.var_scenario = tk.StringVar(value=s.scenario)
         self.var_advisor = tk.BooleanVar(value=s.use_advisor)
@@ -149,15 +158,28 @@ class AutoMeshApp:
         ttk.Spinbox(mesh, from_=1, to=30, textvariable=self.var_attempts,
                     width=10).grid(row=4, column=1, sticky="w", padx=PAD, pady=(4, 0))
 
-        ttk.Label(mesh, text="Birim (boş=otomatik)").grid(
+        ttk.Label(mesh, text="Geometri birimi").grid(
             row=5, column=0, sticky="w", pady=(4, 0))
-        ttk.Combobox(mesh, textvariable=self.var_unit,
-                     values=["", "m", "cm", "mm", "um", "in", "ft"],
-                     width=10).grid(row=5, column=1, sticky="w", padx=PAD, pady=(4, 0))
+        unit_row = ttk.Frame(mesh)
+        unit_row.grid(row=5, column=1, sticky="w", padx=PAD, pady=(4, 0))
+        ttk.Combobox(unit_row, textvariable=self.var_unit,
+                     values=[""] + list(DISPLAY_UNITS), width=7).pack(side="left")
+        ttk.Label(unit_row, text="boş = dosyadan tespit",
+                  foreground="#666").pack(side="left", padx=(6, 0))
+
+        ttk.Label(mesh, text="Gösterim birimi").grid(
+            row=6, column=0, sticky="w", pady=(4, 0))
+        show_row = ttk.Frame(mesh)
+        show_row.grid(row=6, column=1, sticky="w", padx=PAD, pady=(4, 0))
+        ttk.Combobox(show_row, textvariable=self.var_display_unit,
+                     values=list(DISPLAY_UNITS) + ["auto"], state="readonly",
+                     width=7).pack(side="left")
+        ttk.Label(show_row, text="ekranda ve raporda",
+                  foreground="#666").pack(side="left", padx=(6, 0))
 
         ttk.Checkbutton(mesh, text="Sınır tabakası (prizma) kur",
                         variable=self.var_bl).grid(
-            row=6, column=0, columnspan=2, sticky="w", pady=(6, 0))
+            row=7, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         flow = ttk.LabelFrame(wrapper, text="Akış bilgisi (opsiyonel - y+ için)",
                               padding=PAD)
@@ -180,8 +202,12 @@ class AutoMeshApp:
         run_box = ttk.LabelFrame(wrapper, text="Çalıştırma", padding=PAD)
         run_box.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(PAD, 0))
 
-        ttk.Checkbutton(run_box, text="Fluent penceresini göster",
+        ttk.Checkbutton(run_box,
+                        text="Fluent penceresini göster (meshlemeyi canlı izle)",
                         variable=self.var_fluent_gui).grid(row=0, column=0, sticky="w")
+        ttk.Checkbutton(run_box, text="Bitince Fluent açık kalsın",
+                        variable=self.var_keep_open).grid(
+            row=2, column=0, sticky="w", pady=(4, 0))
         ttk.Checkbutton(run_box, text="Prova (ANSYS açılmaz, lisans harcanmaz)",
                         variable=self.var_dry_run).grid(row=0, column=1, sticky="w",
                                                         padx=(PAD * 2, 0))
@@ -313,9 +339,11 @@ class AutoMeshApp:
             max_cells=_safe_int(self.var_max_cells, 20_000_000),
             attempts=_safe_int(self.var_attempts, 6),
             length_unit=self.var_unit.get().strip(),
+            display_unit=self.var_display_unit.get().strip() or "mm",
             ansys_version=self.var_ansys.get().strip(),
             boundary_layers=bool(self.var_bl.get()),
             show_fluent_gui=bool(self.var_fluent_gui.get()),
+            keep_fluent_open=bool(self.var_keep_open.get()),
             dry_run=bool(self.var_dry_run.get()),
             scenario=self.var_scenario.get(),
             use_advisor=bool(self.var_advisor.get()),

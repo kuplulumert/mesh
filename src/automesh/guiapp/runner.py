@@ -143,7 +143,7 @@ class BackgroundRun:
 
         log = logging.getLogger("automesh")
         self.metrics = analyze_geometry(self.settings.geometry_path, cfg)
-        for row in measurements(self.metrics):
+        for row in measurements(self.metrics, cfg=cfg):
             note = "   ({0})".format(row.note) if row.note else ""
             log.info("%-26s %s%s", row.label, row.value, note)
         for warning in self.metrics.warnings:
@@ -156,13 +156,13 @@ class BackgroundRun:
         """Fluent açmadan geometri analizi (ve istenirse plan)."""
         from ..geometry import analyze_geometry
         from ..planning.sizing import plan_mesh
-        from ..units import format_length
+        from ..units import format_length, resolve_display_unit
 
         cfg = self.settings.to_config()
         log = logging.getLogger("automesh")
         metrics = analyze_geometry(self.settings.geometry_path, cfg)
 
-        unit = metrics.length_unit_hint or "m"
+        unit = resolve_display_unit(cfg.output.display_unit, metrics.diagonal)
         dx, dy, dz = metrics.bbox.sizes
         log.info("--- Geometri ---")
         log.info("Analiz yöntemi    : %s", metrics.analyzer)
@@ -188,7 +188,7 @@ class BackgroundRun:
             return
 
         plan = plan_mesh(metrics, cfg)
-        punit = plan.length_unit
+        punit = unit
         log.info("--- Mesh planı ---")
         log.info("Akış              : %s", plan.workflow.value)
         log.info("Min / max boyut   : %s / %s",

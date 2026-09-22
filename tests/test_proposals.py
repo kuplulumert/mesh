@@ -137,3 +137,30 @@ def test_proposals_serialise_for_json_output(metrics, cfg):
 
     data = [p.to_dict() for p in build_proposals(metrics, cfg)]
     assert json.loads(json.dumps(data, ensure_ascii=False))[0]["plan"]["max_size"] > 0
+
+
+def test_display_unit_is_independent_of_the_file_unit(metrics, cfg):
+    """SpaceClaim metre bildirir; kullanıcı yine mm görmek ister."""
+    metrics.length_unit_hint = "m"
+    cfg.output.display_unit = "mm"
+    rows = measurements(metrics, cfg=cfg)
+    bbox_row = [r for r in rows if r.label == "Sınır kutusu"][0]
+    assert "mm" in bbox_row.value
+    assert " m" not in bbox_row.value.replace("mm", "")
+
+    proposals = build_proposals(metrics, cfg)
+    assert all(p.display_unit == "mm" for p in proposals)
+    assert "mm" in proposals[0].size_text()
+
+
+def test_display_unit_auto_follows_model_size(metrics, cfg):
+    cfg.output.display_unit = "auto"
+    proposals = build_proposals(metrics, cfg)
+    # 12 cm'lik bir parça -> mm mantıklı
+    assert proposals[0].display_unit == "mm"
+
+
+def test_inches_are_honoured(metrics, cfg):
+    cfg.output.display_unit = "in"
+    rows = measurements(metrics, cfg=cfg)
+    assert "in" in [r for r in rows if r.label == "Köşegen"][0].value

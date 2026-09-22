@@ -605,10 +605,14 @@ class AutoMeshAgent:
         if self.driver is not None:
             self._write("transcript.log", self.driver.transcript.text())
             self._write("journal.py", self.driver.journal_text())
-            try:
-                self.driver.close()
-            except Exception as exc:  # pragma: no cover
-                self.log.debug("Fluent kapatılamadı: %s", exc)
+            if self.cfg.fluent.keep_open_after_run and self.driver.is_alive():
+                self.log.info(
+                    "Fluent açık bırakıldı - ağı inceleyip pencereyi elle kapatın.")
+            else:
+                try:
+                    self.driver.close()
+                except Exception as exc:  # pragma: no cover
+                    self.log.debug("Fluent kapatılamadı: %s", exc)
 
         result.run_dir = self.run_dir
         result.geometry = self.metrics.to_dict()

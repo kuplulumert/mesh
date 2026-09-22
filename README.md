@@ -118,15 +118,55 @@ Pencerede:
 | Bölüm | Ne yapar |
 |---|---|
 | **Dosyalar** | Geometriyi Windows'un kendi dosya seçicisiyle seçin; çıktı klasörü ve isteğe bağlı konfigürasyon dosyası da buradan |
-| **Mesh ayarları** | Çekirdek sayısı, akış, hacim doldurma, hücre sınırı, deneme sayısı, birim, prizma açık/kapalı |
+| **Mesh ayarları** | Çekirdek sayısı, akış, hacim doldurma, hücre sınırı, deneme sayısı, prizma açık/kapalı, **geometri birimi** ve **gösterim birimi** |
 | **Akış bilgisi** | y+, hız, yoğunluk, viskozite, karakteristik uzunluk — doldurursanız ilk katman yüksekliği hesaplanır |
-| **Çalıştırma** | Fluent penceresini göster, prova modu + senaryo, Claude danışmanı, ANSYS sürümü |
+| **Çalıştırma** | Fluent penceresini göster (varsayılan açık), bitince Fluent açık kalsın, prova modu + senaryo, Claude danışmanı, ANSYS sürümü |
 | **Üç düğme** | `1. Geometriyi analiz et` → `2. Ölçüm ve öneriler` → `3. Mesh oluştur` |
 | **Seçili kademe satırı** | Hangi mesh kademesini seçtiğinizi gösterir; "Seçimi temizle" ile otomatiğe döner |
 | **Günlük** | Agent'ın kararları canlı akar: teşhisler sarı, hatalar kırmızı, başarı yeşil |
 | **Durdur** | Çalışmayı bir sonraki adımda temizce keser; Fluent düzgün kapatılır ve rapor yine yazılır |
 | **Raporu aç / Klasörü aç** | Çalışma bitince etkinleşir |
 | **Komutu kopyala** | Aynı işi yapan `automesh run ...` satırını panoya alır — otomasyona geçerken işe yarar |
+
+### Birimler
+
+İki ayrı birim var ve karıştırılmamalı:
+
+| | Ne işe yarar | Varsayılan |
+|---|---|---|
+| **Geometri birimi** | Fluent'e "bu dosya şu birimde" diye bildirilir | boş = dosyadan tespit |
+| **Gösterim birimi** | Ekranda ve raporda uzunlukların yazıldığı birim | **mm** |
+
+Bunlar bilerek ayrıdır: SpaceClaim geometriyi metre cinsinden bildirir, ama
+0.00069 m yerine 0.6967 mm okumak istersiniz. Gösterim birimini değiştirmek
+Fluent'e gidenlere dokunmaz — dokunsaydı model 1000 kat yanlış ölçeklenirdi.
+
+Komut satırında:
+
+```bat
+automesh run parca.scdoc --show-unit mm     :: varsayılan
+automesh run parca.scdoc --show-unit in     :: inç
+automesh run parca.scdoc --show-unit auto   :: model boyutuna göre
+```
+
+### Meshlemeyi Fluent'ten izleme
+
+Arayüzde **"Fluent penceresini göster"** varsayılan olarak açıktır: Fluent
+Meshing penceresi açılır, görev ağacı ve grafik penceresi ağ kurulurken
+canlı güncellenir.
+
+**"Bitince Fluent açık kalsın"** kutusunu işaretlerseniz çalışma bittikten
+sonra Fluent kapanmaz; ağı orada döndürüp inceleyebilirsiniz. Fluent'i sonra
+elle kapatmanız gerekir.
+
+```bat
+automesh run parca.scdoc --gui          :: pencereyi göster
+automesh run parca.scdoc --keep-open    :: göster ve bitince açık bırak
+```
+
+> Fluent penceresi açıkken **içinde tıklamayın**. Agent Fluent'i API üzerinden
+> sürüyor; aynı anda elle müdahale etmek görev ağacını agent'ın beklediği
+> durumdan çıkarır. İzlemek serbest, karışmak değil.
 
 ### Ölçüm ve öneri ekranı
 
@@ -335,7 +375,7 @@ automesh config -o automesh.json          # örnek konfigürasyon üret
 |---|---|
 | `--dry-run` / `--scenario X` | ANSYS'siz simülasyon |
 | `--cores N` | Fluent çekirdek sayısı |
-| `--gui` | Fluent arayüzünü göster (izlemek için) |
+| `--gui` | Fluent arayüzünü göster (meshlemeyi canlı izle) |
 | `--version-ansys 24.2.0` | ANSYS sürümünü sabitle |
 | `--workflow watertight\|fault-tolerant` | akışı zorla |
 | `--fill poly-hexcore\|polyhedra\|hexcore\|tetrahedral` | hacim doldurma |
@@ -346,7 +386,9 @@ automesh config -o automesh.json          # örnek konfigürasyon üret
 | `--attempts N` | yeniden deneme sayısı |
 | `--y-plus`, `--velocity`, `--density`, `--viscosity`, `--length` | sınır tabakası için akış bilgisi |
 | `--no-boundary-layers` | prizma katmanı kurma |
-| `--unit mm` | geometri birimini zorla |
+| `--unit mm` | geometrinin gerçek birimini zorla (Fluent'e bildirilir) |
+| `--show-unit mm\|in\|auto` | ekranda/raporda gösterim birimi (varsayılan mm) |
+| `--keep-open` | bitince Fluent'i açık bırak |
 | `--advisor` | bilinmeyen hatalarda Claude'a danış |
 | `--set bölüm.anahtar=değer` | herhangi bir ayarı geçersiz kıl |
 
@@ -456,7 +498,7 @@ src/automesh/
 Arayüzün mantığı bilerek Tkinter'dan ayrı tutuldu: `state.py` ve `runner.py`
 pencere açmadan test edilebiliyor, `app.py` yalnızca widget yerleşimi.
 
-Testler: `python -m pytest` (144 test, ANSYS ve ekran gerektirmez).
+Testler: `python -m pytest` (154 test, ANSYS ve ekran gerektirmez).
 
 ---
 

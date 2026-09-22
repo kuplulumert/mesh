@@ -20,6 +20,8 @@ SETTINGS_DIR = os.path.join(
 SETTINGS_PATH = os.path.join(SETTINGS_DIR, "gui-settings.json")
 
 WORKFLOWS = ("auto", "watertight", "fault-tolerant")
+#: Arayüzdeki birim listeleri.
+DISPLAY_UNITS = ("mm", "cm", "m", "um", "in", "ft")
 FILLS = ("poly-hexcore", "polyhedra", "hexcore", "tetrahedral")
 SCENARIOS = ("clean", "realistic", "dirty", "prism", "memory", "stubborn")
 
@@ -47,9 +49,11 @@ class GuiSettings:
     volume_fill: str = "poly-hexcore"
     max_cells: int = 20_000_000
     attempts: int = 6
-    length_unit: str = ""              # boş -> dosyadan tespit
+    length_unit: str = ""              # geometrinin gerçek birimi; boş -> tespit
+    display_unit: str = "mm"           # ekranda/raporda gösterim birimi
     boundary_layers: bool = True
-    show_fluent_gui: bool = False
+    show_fluent_gui: bool = True       # meshlemeyi Fluent penceresinden izle
+    keep_fluent_open: bool = False     # bitince Fluent açık kalsın
     dry_run: bool = False
     scenario: str = "realistic"
     use_advisor: bool = False
@@ -114,6 +118,11 @@ class GuiSettings:
             problems.append("Hücre sınırı en az 1000 olmalı.")
         if self.config_file and not os.path.isfile(self.config_file):
             problems.append("Konfigürasyon dosyası bulunamadı: {0}".format(self.config_file))
+        for label, value in (("Geometri birimi", self.length_unit),
+                             ("Gösterim birimi", self.display_unit)):
+            text = (value or "").strip().lower()
+            if text and text != "auto" and text not in DISPLAY_UNITS:
+                problems.append("{0} tanınmıyor: {1!r}".format(label, value))
         for label, value in (("y+", self.y_plus), ("Hız", self.velocity),
                              ("Yoğunluk", self.density), ("Viskozite", self.viscosity),
                              ("Karakteristik uzunluk", self.characteristic_length)):
@@ -132,9 +141,10 @@ class GuiSettings:
         cfg.fluent.use_mock = bool(self.dry_run)
         if self.dry_run:
             cfg.fluent.mock_scenario = self.scenario
-        if self.show_fluent_gui:
+        if self.show_fluent_gui or self.keep_fluent_open:
             cfg.fluent.show_gui = True
             cfg.fluent.ui_mode = "gui"
+        cfg.fluent.keep_open_after_run = bool(self.keep_fluent_open)
         if self.ansys_version.strip():
             cfg.fluent.product_version = self.ansys_version.strip()
 
@@ -151,6 +161,7 @@ class GuiSettings:
 
         if self.length_unit.strip():
             cfg.geometry.length_unit = self.length_unit.strip()
+        cfg.output.display_unit = self.display_unit.strip() or "mm"
         for attribute, raw in (
             ("y_plus_target", self.y_plus),
             ("velocity", self.velocity),
@@ -176,7 +187,9 @@ class GuiSettings:
         if self.dry_run:
             parts += ["--dry-run", "--scenario", self.scenario]
         parts += ["--cores", str(self.cores)]
-        if self.show_fluent_gui:
+        if self.keep_fluent_open:
+            parts.append("--keep-open")
+        elif self.show_fluent_gui:
             parts.append("--gui")
         if self.workflow != "auto":
             parts += ["--workflow", self.workflow]
@@ -190,6 +203,8 @@ class GuiSettings:
             parts.append("--no-boundary-layers")
         if self.length_unit.strip():
             parts += ["--unit", self.length_unit.strip()]
+        if self.display_unit.strip() and self.display_unit.strip() != "mm":
+            parts += ["--show-unit", self.display_unit.strip()]
         for flag, raw in (("--y-plus", self.y_plus), ("--velocity", self.velocity),
                           ("--length", self.characteristic_length)):
             if raw.strip():
@@ -213,7 +228,7 @@ class GuiSettings:
             return "Mesh kademesi: otomatik (agent geometriden seçecek)"
         from ..units import format_length
 
-        unit = self.length_unit.strip() or "mm"
+        unit = self.display_unit.strip() or "mm"
         return "Seçili kademe: {0}  |  {1} - {2}  |  ~{3:,} hücre".format(
             self.chosen_label,
             format_length(self.chosen_min_size, unit),

@@ -106,6 +106,28 @@ Durdurma bir sonraki kontrol noktasında devreye girer; Fluent'in o anki adımı
 (örneğin hacim ağı üretimi) yarıda kesilmez. Böylece Fluent düzgün kapatılır
 ve rapor yine yazılır.
 
+## Uzunluklar metre cinsinden görünüyor
+
+Gösterim birimi varsayılan olarak mm'dir. Metre görüyorsanız eski bir ayar
+dosyası kalmış olabilir; arayüzde **Gösterim birimi**'ni `mm` yapın ya da:
+
+```bat
+automesh run parca.scdoc --show-unit mm
+```
+
+Not: **Geometri birimi** alanını değiştirmeyin. O, Fluent'e dosyanın gerçek
+birimini bildirir; yanlış verirseniz model 1000 kat büyük/küçük içe aktarılır.
+
+## Fluent penceresi açılmıyor
+
+Arayüzde "Fluent penceresini göster" kutusunun işaretli olduğundan emin olun
+(varsayılan açık). Komut satırında `--gui` ekleyin. Uzak masaüstü ya da
+servis hesabı üzerinden çalışıyorsanız Fluent penceresi hiç görünmeyebilir;
+o durumda ilerlemeyi agent günlüğünden takip edin.
+
+Mesh bitince pencere hemen kapanıyorsa "Bitince Fluent açık kalsın" kutusunu
+(ya da `--keep-open`) kullanın.
+
 ## Çalışmayı tekrar üretmek istiyorum
 
 Her çalışma `journal.py` üretir. Bu, aynı adımları tekrarlayan bir PyFluent

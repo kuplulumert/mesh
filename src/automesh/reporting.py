@@ -13,7 +13,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 from .models import QualityReport, RunResult
-from .units import format_length
+from .units import format_length, resolve_display_unit
 
 _VERDICT_TR = {
     "good": "iyi",
@@ -45,7 +45,9 @@ def write_reports(agent: Any, result: RunResult) -> None:
 def build_markdown(agent: Any, result: RunResult) -> str:
     metrics = agent.metrics
     plan = agent.plan
-    unit = plan.length_unit
+    # Raporda okunabilirlik için gösterim birimi; Fluent'e bildirilen
+    # içe aktarma birimi (plan.length_unit) bundan bağımsızdır.
+    unit = resolve_display_unit(agent.cfg.output.display_unit, metrics.diagonal)
     lines: List[str] = []
 
     status = "BAŞARILI" if result.success else "BAŞARISIZ"
@@ -100,7 +102,8 @@ def build_markdown(agent: Any, result: RunResult) -> str:
     lines.append("| Parametre | Değer |")
     lines.append("|---|---|")
     lines.append("| Akış | {0} |".format(plan.workflow.value))
-    lines.append("| Uzunluk birimi | {0} |".format(unit))
+    lines.append("| Gösterim birimi | {0} |".format(unit))
+    lines.append("| Fluent içe aktarma birimi | {0} |".format(plan.length_unit))
     lines.append("| Minimum hücre boyutu | {0} |".format(format_length(plan.min_size, unit)))
     lines.append("| Maksimum hücre boyutu | {0} |".format(format_length(plan.max_size, unit)))
     lines.append("| Büyüme oranı | {0:.3f} |".format(plan.growth_rate))
