@@ -15,8 +15,8 @@ akışa geçme gibi düzeltmeleri kendi uygular ve tekrar dener.
                         +--------------------------------------  yetersiz mi?
 ```
 
-Arayüzde iki çalışma biçimi var: **Basit** (yüzey isimlendirme yok, tek
-düğmeyle mesh) ve **Gelişmiş** (ölçüm, kademe ve yüzey boyutu ekranlarıyla
+Arayüzde iki çalışma biçimi var: **Basit** (ölçüm + kademe seçimi, yüzey
+isimlendirme yok) ve **Gelişmiş** (ölçüm, kademe ve yüzey boyutu ekranlarıyla
 tam akış). Komut satırından da aynısı:
 
 ```bat
@@ -122,8 +122,16 @@ Pencere iki sekmeye ayrılmıştır:
 ### Basit sekme (varsayılan)
 
 Yüzey isimlendirme/gruplama **hiç çalışmaz**. SpaceClaim dokümanına
-dokunulmaz, named selection oluşturulmaz. Geometriyi seçip **Mesh oluştur**'a
-basarsınız; boyutlar geometriden otomatik hesaplanır, ara ekran çıkmaz.
+dokunulmaz, named selection oluşturulmaz. İki adım var:
+
+1. **Geometriyi analiz et ve kademe seç** - ölçülen uzunluklar (sınır kutusu,
+   köşegen, en küçük özellik, eğrisel yüzey oranı...) ve seçilebilir mesh
+   kademeleri tek ekranda çıkar; hangisini neden seçeceğiniz orada yazar.
+2. **Mesh oluştur** - seçtiğiniz kademeyle uçtan uca mesh.
+
+Kademe seçmeden doğrudan 2'ye basarsanız boyutlar tamamen otomatik hesaplanır.
+Seçilen kademe düğmelerin altında yazar; **Seçimi temizle** ile otomatiğe
+dönersiniz. Yüzey boyutu (bölme sayısı) ekranı bu sekmede açılmaz.
 
 Elinizin altında her zaman çalışan bir yol olsun diye ayrıldı: gelişmiş
 akıştaki bir sorun bu sekmeyi etkilemez.

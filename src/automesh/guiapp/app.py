@@ -129,9 +129,10 @@ class AutoMeshApp:
 
         ttk.Label(
             parent,
-            text=("Geometriyi seçin ve 'Mesh oluştur'a basın. Boyutlar "
-                  "geometriden otomatik hesaplanır; SpaceClaim dokümanına "
-                  "dokunulmaz, yüzey grubu oluşturulmaz."),
+            text=("1) Geometriyi seçip analiz edin: ölçülen uzunluklar ve "
+                  "seçilebilir mesh kademeleri bir ekranda çıkar. "
+                  "2) Kademeyi seçip 'Mesh oluştur'a basın. SpaceClaim "
+                  "dokümanına dokunulmaz, yüzey grubu oluşturulmaz."),
             foreground="#555", wraplength=900, justify="left").grid(
             row=0, column=0, sticky="w", pady=(0, PAD))
 
@@ -175,20 +176,36 @@ class AutoMeshApp:
         bar.grid(row=3, column=0, sticky="ew", pady=(PAD, 0))
 
         self.btn_simple_analyze = ttk.Button(
-            bar, text="Geometriyi analiz et (hızlı bakış)",
+            bar, text="1. Geometriyi analiz et ve kademe seç",
             command=lambda: self._guard("Geometri analizi",
-                                        lambda: self._start("analyze",
+                                        lambda: self._start("propose",
                                                             mode="simple")))
         self.btn_simple_analyze.pack(side="left")
 
         self.btn_simple_run = ttk.Button(
-            bar, text="Mesh oluştur",
+            bar, text="2. Mesh oluştur",
             command=lambda: self._guard("Mesh oluşturma",
                                         lambda: self._start("run",
                                                             mode="simple")))
         self.btn_simple_run.pack(side="left", padx=(PAD, 0))
 
         self._action_buttons.extend([self.btn_simple_analyze, self.btn_simple_run])
+
+        # Seçilen kademe basit sekmede de görünsün; gelişmiş sekmedekiyle
+        # aynı değişkeni paylaşır, yani iki sekme aynı seçimi gösterir.
+        choice = ttk.Frame(parent)
+        choice.grid(row=4, column=0, sticky="ew", pady=(PAD, 0))
+        choice.columnconfigure(0, weight=1)
+        ttk.Label(choice, textvariable=self.var_choice,
+                  foreground="#1b5e20").grid(row=0, column=0, sticky="w")
+        self.btn_simple_reopen = ttk.Button(
+            choice, text="Kademeyi yeniden seç",
+            command=lambda: self._guard("Kademe seçimi",
+                                        self._reopen_proposals),
+            state="disabled")
+        self.btn_simple_reopen.grid(row=0, column=1, sticky="e", padx=(PAD, 0))
+        ttk.Button(choice, text="Seçimi temizle",
+                   command=self._clear_choice).grid(row=0, column=2, sticky="e")
 
     # -- gelişmiş sekme --------------------------------------------------
     def _build_advanced_tab(self, parent: ttk.Frame) -> None:
@@ -678,6 +695,7 @@ class AutoMeshApp:
         self._last_metrics = run.metrics
         self._last_proposals = run.proposals
         self.btn_sizing.configure(state="normal")
+        self.btn_simple_reopen.configure(state="normal")
         self._choose_proposal(run.metrics, run.proposals)
 
     def _choose_proposal(self, metrics, proposals) -> None:
@@ -701,9 +719,14 @@ class AutoMeshApp:
             self._append("! " + warning, "WARNING")
         self.var_status.set("Kademe seçildi: {0}".format(chosen.label))
         # Kademe seçildikten sonra yüzey boyutlarını gözden geçirme sırası.
-        if getattr(metrics, "face_groups", None) and self.var_local_sizing.get():
+        # Basit modda yüzey grubu hiç üretilmez, o ekran da açılmaz.
+        if (self._mode == "advanced" and getattr(metrics, "face_groups", None)
+                and self.var_local_sizing.get()):
             self._edit_sizing()
-        self._append("Şimdi '3. Mesh oluştur' ile devam edebilirsiniz.", "INFO")
+        self._append(
+            "Şimdi '2. Mesh oluştur' ile devam edebilirsiniz."
+            if self._mode == "simple"
+            else "Şimdi '3. Mesh oluştur' ile devam edebilirsiniz.", "INFO")
 
     def _reopen_proposals(self) -> None:
         """Kademe seçim ekranını yeniden aç (yeni analiz yapmadan)."""
@@ -712,7 +735,8 @@ class AutoMeshApp:
         if metrics is None or not proposals:
             messagebox.showinfo(
                 "AutoMesh",
-                "Önce '1. Geometriyi analiz et' ile geometriyi okutun.")
+                "Önce '1. Geometriyi analiz et' düğmesiyle geometriyi "
+                "okutun; kademeler ondan sonra listelenir.")
             return
         self._choose_proposal(metrics, proposals)
 
@@ -744,7 +768,8 @@ class AutoMeshApp:
         if metrics is None:
             messagebox.showinfo(
                 "AutoMesh",
-                "Önce '1. Geometriyi analiz et' ile geometriyi okutun.")
+                "Önce '1. Geometriyi analiz et' düğmesiyle geometriyi "
+                "okutun; kademeler ondan sonra listelenir.")
             return
         if not getattr(metrics, "face_groups", None):
             # "Analiz edin" demek yanıltıcı olurdu: analiz yapıldı, sonuç boş.

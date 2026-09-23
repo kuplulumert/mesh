@@ -277,3 +277,85 @@ def test_tab_change_switches_the_mode(fake_tk, tmp_path, monkeypatch):
     app._on_tab_changed()
     assert app._mode == "simple"
     assert app._collect().is_simple
+
+
+def test_simple_analyze_opens_the_level_screen(fake_tk, tmp_path, monkeypatch,
+                                               step_file):
+    """Basit sekmede analiz de ölçüm + kademe işini başlatmalı."""
+    module, messagebox = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    app.var_geometry.set(step_file)
+    app.var_output.set(str(tmp_path / "run"))
+
+    app._guard("Geometri analizi", lambda: app._start("propose", mode="simple"))
+
+    assert messagebox.showerror.call_count == 0
+    assert app.run is not None and app.run.mode == "propose"
+    assert app._mode == "simple"
+    app.run.cancel()
+    app.run.join(10)
+
+
+def _fake_choice():
+    """ProposalDialog'un döndürdüğü nesnenin arayüze bakan yüzü."""
+    plan = types.SimpleNamespace(min_size=0.001, max_size=0.01)
+    return types.SimpleNamespace(
+        label="Orta", plan=plan, cells=1_000_000, warnings=[],
+        size_text=lambda: "1 mm / 10 mm", cells_text=lambda: "1.000.000")
+
+
+def test_simple_mode_skips_the_face_size_screen(fake_tk, tmp_path, monkeypatch):
+    """Kademe seçilince basit modda yüzey boyutu ekranı açılmamalı."""
+    module, _ = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    from automesh.guiapp import proposals_dialog
+
+    monkeypatch.setattr(
+        proposals_dialog, "ProposalDialog",
+        lambda *a, **kw: types.SimpleNamespace(show=lambda: _fake_choice()))
+    opened = []
+    monkeypatch.setattr(app, "_edit_sizing", lambda: opened.append("boyut"))
+
+    app._mode = "simple"
+    app.var_local_sizing.set(True)
+    metrics = types.SimpleNamespace(face_groups=[object()])
+    app._choose_proposal(metrics, [_fake_choice()])
+
+    assert opened == []
+    assert app.settings.chosen_label == "Orta"
+    assert "2. Mesh oluştur" in _logged_text(app)
+
+
+def test_advanced_mode_still_opens_the_face_size_screen(fake_tk, tmp_path,
+                                                        monkeypatch):
+    module, _ = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    from automesh.guiapp import proposals_dialog
+
+    monkeypatch.setattr(
+        proposals_dialog, "ProposalDialog",
+        lambda *a, **kw: types.SimpleNamespace(show=lambda: _fake_choice()))
+    opened = []
+    monkeypatch.setattr(app, "_edit_sizing", lambda: opened.append("boyut"))
+
+    app._mode = "advanced"
+    app.var_local_sizing.set(True)
+    app._choose_proposal(types.SimpleNamespace(face_groups=[object()]),
+                         [_fake_choice()])
+
+    assert opened == ["boyut"]
+
+
+def test_level_screen_enables_the_simple_reopen_button(fake_tk, tmp_path,
+                                                       monkeypatch):
+    """Seçim ekranı açıldıktan sonra basit sekmeden yeniden açılabilmeli."""
+    module, _ = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(app, "_choose_proposal", lambda *a: None)
+    app.run = types.SimpleNamespace(
+        proposals=[_fake_choice()],
+        metrics=types.SimpleNamespace(face_groups=[]))
+
+    app._show_proposals()
+
+    app.btn_simple_reopen.configure.assert_called_with(state="normal")
