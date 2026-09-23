@@ -37,7 +37,7 @@ PAD = 8
 
 
 class AutoMeshApp:
-    def __init__(self, root: tk.Tk) -> None:
+    def __init__(self, root: tk.Tk, geometry: Optional[str] = None) -> None:
         self.root = root
         self.settings = GuiSettings.load()
         self.run: Optional[BackgroundRun] = None
@@ -55,7 +55,14 @@ class AutoMeshApp:
         self._build_variables()
         self._build_layout()
         self._on_dry_run_toggled()
+        if geometry:
+            self.set_geometry(geometry)
         self._pump()
+
+    def set_geometry(self, path: str) -> None:
+        """Dışarıdan gelen geometriyi alana yaz (kısayola sürükle-bırak)."""
+        self.var_geometry.set(path)
+        self.var_status.set("Geometri hazır: {0}".format(os.path.basename(path)))
 
     # ------------------------------------------------------------------
     # değişkenler
@@ -911,7 +918,7 @@ def _open_path(path: str) -> None:
         messagebox.showwarning("AutoMesh", "Açılamadı:\n{0}".format(exc))
 
 
-def main() -> int:
+def main(geometry: Optional[str] = None) -> int:
     # Yüksek DPI ekranlarda bulanıklığı önler; pencere oluşturulmadan ÖNCE
     # çağrılmalı, sonrasında etkisiz kalır.
     try:
@@ -921,10 +928,12 @@ def main() -> int:
     except Exception:
         pass
     root = tk.Tk()
-    AutoMeshApp(root)
+    AutoMeshApp(root, geometry=geometry)
     root.mainloop()
     return 0
 
 
 if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(main())
+    import sys as _sys
+
+    raise SystemExit(main(_sys.argv[1] if len(_sys.argv) > 1 else None))

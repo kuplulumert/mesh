@@ -114,8 +114,36 @@ Komut satırı yazmak istemiyorsanız masaüstü penceresini kullanın:
 automesh gui
 ```
 
-Depo kökündeki **`AutoMesh.bat`** dosyasına çift tıklamak da aynı işi yapar
-(varsa `.venv`'i kendisi bulur).
+### Çift tıkla çalıştırma (kurulum gerekmez)
+
+Depo kökündeki **`AutoMesh.bat`** dosyasına çift tıklamak yeterli. Her seferinde
+komut yazmamak için bir kez **`Kisayol-Olustur.bat`**'ı çalıştırın: masaüstüne
+ve Başlat menüsüne `AutoMesh` kısayolu koyar (kısayola sağ tık → *Görev
+çubuğuna sabitle* de çalışır). Hiçbir şey kurmaz, sadece iki `.lnk` dosyası
+oluşturur.
+
+Başlatıcı ne yapar:
+
+| Adım | Açıklama |
+|---|---|
+| Python bulur | Önce `AUTOMESH_PYTHON`, sonra `py`, sonra `python`. Bulduğunu **sınar** — Microsoft Store'un `python` kısayolu PATH'te görünür ama Python değildir |
+| Yolları hazırlar | Depodaki `src` ve `automesh-yollar.txt` içindeki klasörler `PYTHONPATH`'in başına eklenir (PyFluent başka yerde kuruluysa oraya yazın; örnek: `automesh-yollar.ornek.txt`) |
+| Ön kontrol yapar | `import automesh.guiapp.app` denenir. Başarısızsa hata **ekranda** kalır; başarılıysa pencere konsolsuz açılır |
+
+Kullanımlar:
+
+```bat
+AutoMesh.bat                     :: arayüzü aç (konsol penceresi kapanır)
+AutoMesh.bat konsol              :: arayüzü aç, günlüğü konsolda da gör
+AutoMesh.bat doctor              :: ortam kontrolü
+AutoMesh.bat run parca.scdoc --cores 8
+```
+
+Bir geometriyi **kısayolun üzerine sürükleyip bırakırsanız** arayüz o dosya
+seçili olarak açılır. Aynısı komut satırından: `automesh gui parca.scdoc`.
+
+`.venv` bilerek kullanılmaz: grup ilkesi bazı makinelerde ağ/veri
+sürücüsündeki `python.exe`'yi çalıştırmayı engelliyor.
 
 Pencere iki sekmeye ayrılmıştır:
 

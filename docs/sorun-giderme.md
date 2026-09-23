@@ -163,12 +163,28 @@ bazen eksik olur. Çözüm: python.org'dan kurulum yapın ya da mevcut kurulumu
 **Değiştir (Modify)** ile onarıp "tcl/tk and IDLE" kutusunu işaretleyin.
 
 **`AutoMesh.bat` çift tıklayınca pencere açılıp kapanıyor**
-Hata mesajını görmek için komut isteminden çalıştırın:
+Başlatıcı pencereyi konsolsuz açar; açılış hatası `%TEMP%\automesh-hata.txt`
+dosyasına yazılır. Aynı hatayı ekranda görmek için:
 
 ```bat
-cd /d E:\mesh
-py -m automesh.guiapp
+AutoMesh.bat konsol
 ```
+
+**`calisan bir Python bulunamadi`**
+`py -V` çalışmıyordur. Python başka bir klasördeyse yolunu bir kez tanıtın:
+
+```bat
+setx AUTOMESH_PYTHON "D:\Python311\python.exe"
+```
+
+**Başlatıcı açılıyor ama `No module named ansys`**
+PyFluent başka bir klasöre kurulu. `automesh-yollar.ornek.txt` dosyasını
+`automesh-yollar.txt` adıyla kopyalayıp o klasörü yazın (her satıra bir
+klasör); başlatıcı bunları `PYTHONPATH`'in başına ekler.
+
+**Masaüstü kısayolu oluşturulamadı**
+PowerShell kısıtlı olabilir. Elle: `AutoMesh.bat` dosyasına sağ tık → *Kısayol
+oluştur* → oluşan kısayolu masaüstüne sürükleyin.
 
 **Arayüz donuyor gibi görünüyor**
 Donmaz — mesh üretimi ayrı bir iş parçacığında koşar. Fluent uzun bir adımda

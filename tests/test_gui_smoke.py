@@ -359,3 +359,26 @@ def test_level_screen_enables_the_simple_reopen_button(fake_tk, tmp_path,
     app._show_proposals()
 
     app.btn_simple_reopen.configure.assert_called_with(state="normal")
+
+
+def test_geometry_argument_prefills_the_field(fake_tk, tmp_path, monkeypatch):
+    """Sürükle-bırak: dosya yolu doğrudan geometri alanına yazılmalı."""
+    module, _ = fake_tk
+    from automesh.guiapp import state
+
+    monkeypatch.setattr(state, "SETTINGS_PATH", str(tmp_path / "gui.json"))
+    monkeypatch.setattr(module.GuiSettings, "load",
+                        classmethod(lambda cls, path=None: cls()))
+    app = module.AutoMeshApp(mock.MagicMock(), geometry="C:/cad/parca.scdoc")
+    assert app.var_geometry.get() == "C:/cad/parca.scdoc"
+    assert "parca.scdoc" in app.var_status.get()
+
+
+def test_main_passes_the_geometry_through(fake_tk, tmp_path, monkeypatch):
+    """main(geometry) -> AutoMeshApp(geometry): zincir kopmamalı."""
+    module, _ = fake_tk
+    seen = {}
+    monkeypatch.setattr(module, "AutoMeshApp",
+                        lambda root, geometry=None: seen.setdefault("g", geometry))
+    module.main("C:/cad/parca.scdoc")
+    assert seen["g"] == "C:/cad/parca.scdoc"

@@ -140,7 +140,9 @@ def build_parser() -> argparse.ArgumentParser:
                           choices=("any", "import", "surface", "boundary-layer", "volume"))
 
     # ---- gui -------------------------------------------------------------
-    sub.add_parser("gui", help="Masaüstü arayüzünü aç")
+    gui = sub.add_parser("gui", help="Masaüstü arayüzünü aç")
+    gui.add_argument("geometry", nargs="?",
+                     help="Açılışta geometri alanına yazılacak dosya")
 
     # ---- doctor ----------------------------------------------------------
     doctor = sub.add_parser("doctor", parents=[common],
@@ -378,7 +380,7 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
 def cmd_gui(args: argparse.Namespace) -> int:
     from .guiapp import main as gui_main
 
-    return gui_main()
+    return gui_main(getattr(args, "geometry", None))
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:

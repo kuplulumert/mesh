@@ -1,0 +1,11 @@
+# AutoMesh ek modul yollari
+#
+# Bu dosyayi "automesh-yollar.txt" adiyla kopyalayin ve her satira bir
+# klasor yazin. AutoMesh.bat bu klasorleri PYTHONPATH'in basina ekler,
+# yani PyFluent gibi baska bir yere kurulmus paketler de bulunur.
+#
+# "#" ile baslayan satirlar yok sayilir. Tirnak koymayin.
+#
+# Ornek:
+# D:\Work\plm
+# D:\ortak\python-paketleri

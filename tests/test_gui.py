@@ -7,7 +7,9 @@ biçimde duruyor.
 
 import logging
 import os
+import sys
 import time
+import types
 
 import pytest
 
@@ -514,3 +516,40 @@ def test_mode_survives_save_and_load(tmp_path):
 def test_unknown_mode_is_rejected(step_file):
     problems = GuiSettings(geometry_path=step_file, mode="yarim").validate()
     assert any("Bilinmeyen mod" in p for p in problems)
+
+
+def test_gui_entry_point_accepts_a_geometry(monkeypatch):
+    """`automesh gui parca.scdoc` ve sürükle-bırak aynı yolu kullanır."""
+    import automesh.guiapp as guiapp
+
+    seen = {}
+    fake = types.ModuleType("automesh.guiapp.app")
+
+    def app_main(geometry=None):
+        seen["g"] = geometry
+        return 0
+
+    fake.main = app_main
+    monkeypatch.setitem(sys.modules, "automesh.guiapp.app", fake)
+
+    assert guiapp.main("C:/cad/parca.scdoc") == 0
+    assert seen["g"] == "C:/cad/parca.scdoc"
+
+
+def test_gui_failure_is_written_where_a_windowless_start_can_show_it(
+        monkeypatch, tmp_path):
+    """pyw ile açılan pencerede hata ekrana düşmez; dosyaya yazılmalı."""
+    import automesh.guiapp as guiapp
+
+    crash = tmp_path / "automesh-hata.txt"
+    monkeypatch.setattr(guiapp, "CRASH_LOG", str(crash))
+    fake = types.ModuleType("automesh.guiapp.app")
+
+    def boom(geometry=None):
+        raise RuntimeError("bilerek patlatıldı")
+
+    fake.main = boom
+    monkeypatch.setitem(sys.modules, "automesh.guiapp.app", fake)
+
+    assert guiapp.main() == 1
+    assert "bilerek patlatıldı" in crash.read_text(encoding="utf-8")

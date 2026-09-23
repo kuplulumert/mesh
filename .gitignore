@@ -20,3 +20,6 @@ runs/
 *.cas.h5
 *.trn
 cleanup-fluent-*
+
+# Kullaniciya ozel ek modul yollari (ornek dosya depoda)
+automesh-yollar.txt
