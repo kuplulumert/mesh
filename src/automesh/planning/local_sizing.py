@@ -378,6 +378,71 @@ def spaceclaim_params(cfg: Config) -> dict:
     }
 
 
+#: Betiğin teşhis anahtarları -> insan diline çeviri.
+_DIAG_REASONS = {
+    "gruplama kapali": "Yüzey gruplama ayarı kapalı.",
+    "sinir kutusu olculemedi": "Geometrinin sınır kutusu ölçülemedi.",
+    "hic yuzey okunamadi (DesignFace listesi bos)":
+        "SpaceClaim'den hiç yüzey okunamadı - bu sürümde yüzey listesi "
+        "beklenenden farklı olabilir.",
+    "hicbir yuzeyden olcum alinamadi (yariçap/cevre/kesit hepsi bos)":
+        "Yüzeyler okundu ama hiçbirinden ölçüm alınamadı (yarıçap, çevre ve "
+        "kesit boş) - SpaceClaim API'si bu sürümde farklı olabilir.",
+    "tum olcumler global boyutla zaten cozuluyor (hepsi ust sinirin uzerinde)":
+        "Ölçülen her şey global hücre boyutuyla zaten çözülüyor; ayrı kontrol "
+        "açmanın faydası yok.",
+    "bantlarda yeterli yuzey yok (min_faces_per_group)":
+        "Bantlara düşen yüzey sayısı eşiğin altında "
+        "(local_sizing.min_faces_per_group).",
+    "aday bant olusmadi": "Gruplanacak bir bant oluşmadı.",
+}
+
+
+def explain_missing_groups(metrics, cfg: Config) -> List[str]:
+    """Neden hiç yüzey grubu çıkmadığını insan diliyle anlat.
+
+    Kullanıcıya "önce analiz edin" demek yanıltıcı: analiz yapıldı, sonuç
+    boş çıktı. Sebebi söylemek gerekiyor.
+    """
+    lines: List[str] = []
+    if not cfg.local_sizing.enabled:
+        lines.append("Yüzey gruplarına özel boyut verme kapalı.")
+        return lines
+
+    analyzer = getattr(metrics, "analyzer", "") or "bilinmiyor"
+    if not analyzer.startswith("spaceclaim"):
+        lines.append(
+            "Geometri SpaceClaim ile okunmadı (kullanılan: {0}). Yüzey "
+            "gruplama yalnızca SpaceClaim backend'iyle çalışır.".format(analyzer))
+        return lines
+
+    diagnostics = (getattr(metrics, "raw", None) or {}).get(
+        "face_group_diagnostics") or {}
+    reason = diagnostics.get("reason")
+    if reason:
+        lines.append(_DIAG_REASONS.get(reason, reason))
+    if diagnostics:
+        lines.append(
+            "Sayılar: {0} gövde, {1} yüzey görüldü, {2} ölçülebildi, "
+            "{3} tanesi global boyutla zaten çözülüyordu.".format(
+                diagnostics.get("bodies", 0), diagnostics.get("faces_seen", 0),
+                diagnostics.get("measurable", 0),
+                diagnostics.get("too_coarse", 0)))
+        lines.append(
+            "Okunabilen alanlar: geometri {0}, alan {1}, çevre {2}, "
+            "yarıçap {3}.".format(
+                diagnostics.get("with_geometry", 0),
+                diagnostics.get("with_area", 0),
+                diagnostics.get("with_perimeter", 0),
+                diagnostics.get("with_radius", 0)))
+    for warning in getattr(metrics, "warnings", None) or []:
+        if "grup" in warning.lower() or "selection" in warning.lower():
+            lines.append(warning)
+    if not lines:
+        lines.append("Gruplanacak yüzey bulunamadı.")
+    return lines
+
+
 def format_review_table(reviews: List[SizingReview], plan: MeshPlan,
                         unit: Optional[str] = None) -> str:
     """Konsol için gözden geçirme tablosu."""

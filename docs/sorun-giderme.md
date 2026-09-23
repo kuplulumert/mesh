@@ -202,6 +202,29 @@ o durumda ilerlemeyi agent günlüğünden takip edin.
 Mesh bitince pencere hemen kapanıyorsa "Bitince Fluent açık kalsın" kutusunu
 (ya da `--keep-open`) kullanın.
 
+## "Yüzey boyutları" ekranı açılmıyor, grup yok diyor
+
+Analiz çalıştı ama boyut verilecek yüzey grubu çıkmadı. Arayüz artık
+sebebini yazar; günlükte `--- Yüzey grubu oluşmadı ---` bölümüne bakın:
+
+```
+Sebep: hicbir yuzeyden olcum alinamadi (yariçap/cevre/kesit hepsi bos)
+1 gövde, 240 yüzey görüldü, 0 ölçülebildi, 0 kaba
+Okunabilen: geometri 240, alan 240, çevre 0, yarıçap 0
+```
+
+Bu satırlar hangi SpaceClaim API alanının okunamadığını gösterir:
+
+| Sebep | Anlamı | Ne yapmalı |
+|---|---|---|
+| `hic yuzey okunamadi` | `body.Faces` boş döndü | SpaceClaim sürümü farklı; günlüğü paylaşın |
+| `hicbir yuzeyden olcum alinamadi` | Yüzeyler var ama yarıçap/çevre/alan okunamıyor | Aynı; hangi alanın 0 olduğu satırda yazar |
+| `tum olcumler global boyutla zaten cozuluyor` | Parça için ayrı kontrol gereksiz | Normal; mesh global boyutla çalışır |
+| `bantlarda yeterli yuzey yok` | Her banda 1 yüzey düşmüş | `local_sizing.min_faces_per_group: 1` deneyin |
+| `gruplama kapali` | Ayar kapalı | "Yüzey gruplarına özel boyut ver" kutusunu işaretleyin |
+
+Grup çıkmasa da **mesh çalışır**: tüm yüzeyler global boyutu kullanır.
+
 ## Çalışmayı tekrar üretmek istiyorum
 
 Her çalışma `journal.py` üretir. Bu, aynı adımları tekrarlayan bir PyFluent

@@ -625,10 +625,28 @@ class AutoMeshApp:
     def _edit_sizing(self) -> None:
         """Yüzey gruplarının bölme sayılarını seçtir."""
         metrics = getattr(self, "_last_metrics", None)
-        if metrics is None or not getattr(metrics, "face_groups", None):
+        if metrics is None:
             messagebox.showinfo(
                 "AutoMesh",
-                "Önce '2. Ölçüm ve öneriler' ile geometriyi analiz edin.")
+                "Önce '1. Geometriyi analiz et' ile geometriyi okutun.")
+            return
+        if not getattr(metrics, "face_groups", None):
+            # "Analiz edin" demek yanıltıcı olurdu: analiz yapıldı, sonuç boş.
+            from ..planning.local_sizing import explain_missing_groups
+
+            reasons = explain_missing_groups(metrics, self._collect().to_config())
+            self._append("Yüzey grubu bulunamadı:", "WARNING")
+            for reason in reasons:
+                self._append("  " + reason, "WARNING")
+            self._append(
+                "Mesh yine de çalışır; tüm yüzeyler global boyutu kullanır.",
+                "INFO")
+            messagebox.showinfo(
+                "AutoMesh - yüzey grubu yok",
+                "Geometri analiz edildi ama boyut verilecek yüzey grubu "
+                "çıkmadı.\n\n" + "\n".join(reasons)
+                + "\n\nMesh yine de çalışır: tüm yüzeyler global boyutu "
+                  "kullanır.")
             return
         from ..planning.local_sizing import review_groups
         from ..planning.sizing import plan_mesh

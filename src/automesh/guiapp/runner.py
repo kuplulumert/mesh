@@ -227,6 +227,21 @@ def _log_face_groups(log, metrics, unit: str) -> None:
 
     groups = getattr(metrics, "face_groups", None) or []
     if not groups:
+        diagnostics = (getattr(metrics, "raw", None) or {}).get(
+            "face_group_diagnostics")
+        if diagnostics:
+            log.warning("--- Yüzey grubu oluşmadı ---")
+            log.warning("Sebep: %s", diagnostics.get("reason", "bilinmiyor"))
+            log.info("%d gövde, %d yüzey görüldü, %d ölçülebildi, %d kaba",
+                     diagnostics.get("bodies", 0),
+                     diagnostics.get("faces_seen", 0),
+                     diagnostics.get("measurable", 0),
+                     diagnostics.get("too_coarse", 0))
+            log.info("Okunabilen: geometri %d, alan %d, çevre %d, yarıçap %d",
+                     diagnostics.get("with_geometry", 0),
+                     diagnostics.get("with_area", 0),
+                     diagnostics.get("with_perimeter", 0),
+                     diagnostics.get("with_radius", 0))
         return
     log.info("--- Yüzey grupları (SpaceClaim named selection) ---")
     for group in groups:

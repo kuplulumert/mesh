@@ -495,3 +495,69 @@ def test_orchestrator_points_the_export_at_the_run_directory(step_file, cfg, tmp
     agent = AutoMeshAgent(step_file, cfg, str(tmp_path / "run"))
     agent._analyze()
     assert cfg.geometry.export_dir == str(tmp_path / "run")
+
+
+# --------------------------------------------------------------------------
+# grup çıkmadığında sebebini söyleme
+# --------------------------------------------------------------------------
+
+def _diagnostics(**kwargs):
+    base = {"bodies": 1, "faces_seen": 0, "measurable": 0, "too_coarse": 0,
+            "with_geometry": 0, "with_area": 0, "with_perimeter": 0,
+            "with_radius": 0}
+    base.update(kwargs)
+    return GeometryMetrics(analyzer="spaceclaim",
+                           raw={"face_group_diagnostics": base})
+
+
+def test_missing_groups_explains_a_disabled_setting():
+    from automesh.planning.local_sizing import explain_missing_groups
+
+    cfg = Config()
+    cfg.local_sizing.enabled = False
+    lines = explain_missing_groups(_diagnostics(), cfg)
+    assert any("kapalı" in line for line in lines)
+
+
+def test_missing_groups_explains_a_non_spaceclaim_analyzer():
+    from automesh.planning.local_sizing import explain_missing_groups
+
+    metrics = GeometryMetrics(analyzer="step")
+    lines = explain_missing_groups(metrics, Config())
+    assert any("SpaceClaim" in line for line in lines)
+    assert any("step" in line for line in lines)
+
+
+def test_missing_groups_reports_unreadable_faces():
+    """Asıl teşhis: yüzeyler okundu ama ölçüm alınamadı."""
+    from automesh.planning.local_sizing import explain_missing_groups
+
+    metrics = _diagnostics(
+        reason="hicbir yuzeyden olcum alinamadi (yariçap/cevre/kesit hepsi bos)",
+        faces_seen=240, with_geometry=240, with_area=240)
+    lines = explain_missing_groups(metrics, Config())
+    text = " ".join(lines)
+    assert "ölçüm alınamadı" in text
+    assert "240 yüzey görüldü" in text
+    assert "çevre 0" in text          # hangi alanın okunamadığı görünmeli
+
+
+def test_missing_groups_reports_everything_being_coarse():
+    from automesh.planning.local_sizing import explain_missing_groups
+
+    metrics = _diagnostics(
+        reason="tum olcumler global boyutla zaten cozuluyor (hepsi ust sinirin uzerinde)",
+        faces_seen=50, measurable=50, too_coarse=50)
+    assert any("zaten çözülüyor" in line
+               for line in explain_missing_groups(metrics, Config()))
+
+
+def test_missing_groups_never_says_analyse_first():
+    """Analiz yapıldı; kullanıcıya tekrar analiz etmesini söylemek yanıltıcı."""
+    from automesh.planning.local_sizing import explain_missing_groups
+
+    for metrics in (_diagnostics(reason="aday bant olusmadi"),
+                    GeometryMetrics(analyzer="spaceclaim")):
+        text = " ".join(explain_missing_groups(metrics, Config())).lower()
+        assert "analiz edin" not in text
+        assert text.strip()

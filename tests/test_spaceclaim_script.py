@@ -318,3 +318,55 @@ def test_missing_named_selection_api_is_not_fatal(script):
     """SpaceClaim sürümü grupları vermiyorsa sessizce boş dönmeli."""
     assert script["named_selection_list"]() == []
     assert script["describe_existing_groups"]({}, {}, 0.0) == []
+
+
+# --------------------------------------------------------------------------
+# grup çıkmadığında teşhis
+# --------------------------------------------------------------------------
+
+def test_diagnostics_report_unreadable_faces(script):
+    """Yüzeyler görülüyor ama ölçüm alınamıyorsa bu söylenmeli."""
+    diag = {}
+    body = FakeBody([FakeFace("Plane") for _ in range(8)])
+    assert script["build_face_groups"]([body], {}, 0.2, None, diag) == []
+    assert diag["faces_seen"] == 8
+    assert diag["measurable"] == 0
+    assert "olcum alinamadi" in diag["reason"]
+
+
+def test_diagnostics_report_everything_being_coarse(script):
+    diag = {}
+    body = FakeBody([FakeFace("Cylinder", radius=0.05) for _ in range(5)])
+    script["build_face_groups"]([body], {}, 0.2, None, diag)
+    assert diag["measurable"] == 5
+    assert diag["too_coarse"] == 5
+    assert "global boyutla zaten" in diag["reason"]
+
+
+def test_diagnostics_count_readable_fields(script):
+    """Hangi API alanının okunabildiği ayrı ayrı sayılmalı."""
+    diag = {}
+    body = FakeBody([FakeFace("Cylinder", radius=0.0008, perimeter=0.005)
+                     for _ in range(4)])
+    script["build_face_groups"]([body], {}, 0.5, None, diag)
+    assert diag["with_geometry"] == 4
+    assert diag["with_area"] == 4
+    assert diag["with_perimeter"] == 4
+    assert diag["with_radius"] == 4
+    assert diag["candidates"] == 1
+    assert "reason" not in diag          # başarılıysa sebep yazılmamalı
+
+
+def test_diagnostics_report_a_disabled_setting(script):
+    diag = {}
+    script["build_face_groups"]([FakeBody([])], {"group_faces": False}, 0.2,
+                                None, diag)
+    assert diag["reason"] == "gruplama kapali"
+
+
+def test_diagnostics_report_small_bands(script):
+    diag = {}
+    body = FakeBody([FakeFace("Cylinder", radius=0.0008)])
+    script["build_face_groups"]([body], {}, 0.5, None, diag)
+    assert diag["small_bands"] == 1
+    assert "yeterli yuzey yok" in diag["reason"]

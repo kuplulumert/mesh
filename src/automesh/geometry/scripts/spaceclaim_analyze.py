@@ -511,7 +511,7 @@ def create_named_selection(faces, name):
         return True, "ad verilemedi"
 
 
-def build_face_groups(bodies, params, diagonal, body_gaps=None):
+def build_face_groups(bodies, params, diagonal, body_gaps=None, diag=None):
     """Yuzeyleri OLCULEN buyukluklere gore grupla ve named selection yaz.
 
     Gruplama ve isimlendirme yuzey tipine degil, yuzeyin gerektirdigi hucre
@@ -519,7 +519,25 @@ def build_face_groups(bodies, params, diagonal, body_gaps=None):
     dayanir.  Boylece ad, dogrudan uygulanacak boyutu soyler:
     ``automesh_curv_0p31mm``.
     """
-    if not params.get("group_faces", True) or diagonal <= 0:
+    # Teshis sayaclari: grup cikmadiginda nedenini soyleyebilmek icin.
+    if diag is None:
+        diag = {}
+    diag["faces_seen"] = 0
+    diag["with_geometry"] = 0
+    diag["with_radius"] = 0
+    diag["with_perimeter"] = 0
+    diag["with_area"] = 0
+    diag["measurable"] = 0
+    diag["too_coarse"] = 0
+    diag["bands"] = 0
+    diag["small_bands"] = 0
+    diag["bodies"] = len(bodies)
+
+    if not params.get("group_faces", True):
+        diag["reason"] = "gruplama kapali"
+        return []
+    if diagonal <= 0:
+        diag["reason"] = "sinir kutusu olculemedi"
         return []
 
     prefix = params.get("group_prefix", "automesh")
@@ -535,12 +553,29 @@ def build_face_groups(bodies, params, diagonal, body_gaps=None):
         values = [v for v in body_gaps.values() if v > 0]
         default_gap = min(values) if values else 0.0
 
+    diag["size_ceiling"] = size_ceiling
+    diag["default_gap"] = default_gap
+
     buckets = {}
     for index, design_body in enumerate(bodies):
         body_gap = body_gaps.get(index, default_gap)
         for design_face in design_faces(design_body):
+            diag["faces_seen"] += 1
+            if face_geometry(design_face) is not None:
+                diag["with_geometry"] += 1
+            if face_area(design_face) > 0:
+                diag["with_area"] += 1
+            if face_perimeter(design_face) > 0:
+                diag["with_perimeter"] += 1
+
             size, driver, kind, radius, width = required_size(
                 design_face, body_gap, params)
+            if radius > 0:
+                diag["with_radius"] += 1
+            if size > 0:
+                diag["measurable"] += 1
+            if size > 0 and size > size_ceiling:
+                diag["too_coarse"] += 1
             if size <= 0 or size > size_ceiling:
                 continue
             band = band_key(size, anchor, factor)
@@ -563,10 +598,12 @@ def build_face_groups(bodies, params, diagonal, body_gaps=None):
                 bucket["areas"].append(area)
             bucket["kinds"][kind] = bucket["kinds"].get(kind, 0) + 1
 
+    diag["bands"] = len(buckets)
     candidates = []
     for key in buckets:
         bucket = buckets[key]
         if len(bucket["faces"]) < min_faces:
+            diag["small_bands"] += 1
             continue
         kinds = bucket["kinds"]
         dominant = ""
@@ -592,6 +629,21 @@ def build_face_groups(bodies, params, diagonal, body_gaps=None):
 
     candidates.sort(key=lambda item: item["recommended_size"])
     candidates = candidates[:max_groups]
+    diag["candidates"] = len(candidates)
+    if not candidates:
+        if diag["faces_seen"] == 0:
+            diag["reason"] = "hic yuzey okunamadi (DesignFace listesi bos)"
+        elif diag["measurable"] == 0:
+            diag["reason"] = ("hicbir yuzeyden olcum alinamadi "
+                              "(yariçap/cevre/kesit hepsi bos)")
+        elif diag["too_coarse"] == diag["measurable"]:
+            diag["reason"] = ("tum olcumler global boyutla zaten cozuluyor "
+                              "(hepsi ust sinirin uzerinde)")
+        elif diag["small_bands"]:
+            diag["reason"] = ("bantlarda yeterli yuzey yok "
+                              "(min_faces_per_group)")
+        else:
+            diag["reason"] = "aday bant olusmadi"
 
     groups = []
     for item in candidates:
@@ -778,9 +830,12 @@ def analyze(params):
     except Exception:
         diagonal = 0.0
     groups = []
+    group_diag = {}
     try:
-        groups = build_face_groups(bodies, params, diagonal, body_gaps)
+        groups = build_face_groups(bodies, params, diagonal, body_gaps,
+                                   group_diag)
     except Exception:
+        group_diag["reason"] = "hata: %s" % traceback.format_exc().splitlines()[-1]
         result["warnings"].append(
             "Yuzey gruplama basarisiz: %s" % traceback.format_exc().splitlines()[-1])
 
@@ -796,6 +851,7 @@ def analyze(params):
                 "Mevcut named selection'lar okunamadi: %s"
                 % traceback.format_exc().splitlines()[-1])
     result["face_groups"] = groups
+    result["face_group_diagnostics"] = group_diag
 
     # ---- disari aktarim ------------------------------------------------
     # Named selection olusturduysak STEP ise yaramaz: STEP grup tasimaz.
