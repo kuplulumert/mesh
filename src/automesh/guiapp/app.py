@@ -569,6 +569,10 @@ class AutoMeshApp:
         if problems:
             messagebox.showerror("Eksik veya hatalı bilgi", "\n".join(problems))
             return
+        # Gerçek mesh için PyFluent şart. Eksikse iş thread'inde yığın izi
+        # olarak patlıyordu; kullanıcı açısından "düğme çalışmıyor" demekti.
+        if kind == "run" and not settings.dry_run and not self._check_fluent():
+            return
         settings.save()
 
         self._clear_log()
@@ -594,6 +598,41 @@ class AutoMeshApp:
 
         self.run = BackgroundRun(settings, kind)
         self.run.start()
+
+    def _check_fluent(self) -> bool:
+        """PyFluent yoksa sebebini ve çözümünü göster, işi hiç başlatma."""
+        if _pyfluent_available():
+            return True
+
+        self._clear_log()
+        self._append("=== Mesh oluşturma başlatılamadı ===", "ERROR")
+        self._append("PyFluent (ansys-fluent-core) bu Python'da bulunamadı; "
+                     "Fluent'i sürecek kütüphane o.", "ERROR")
+        self._append("", "INFO")
+        try:
+            from ..doctor import inspect_pyfluent
+
+            for line in inspect_pyfluent():
+                self._append("  " + line, "INFO")
+        except Exception:
+            for line in traceback.format_exc().strip().splitlines():
+                self._append("  " + line, "ERROR")
+        self._append("", "INFO")
+        self._append("Çözüm:", "OK")
+        self._append("  1) Kuruluysa klasörünü automesh-yollar.txt dosyasına "
+                     "yazın (örnek: automesh-yollar.ornek.txt).", "INFO")
+        self._append("  2) Ayrıntılı tanı:  py -m automesh doctor", "INFO")
+        self._append("  3) Fluent'i hiç açmadan denemek için 'Prova' "
+                     "kutusunu işaretleyin.", "INFO")
+        self.var_status.set("PyFluent bulunamadı - günlüğe bakın.")
+        messagebox.showerror(
+            "PyFluent bulunamadı",
+            "Mesh oluşturmak için PyFluent (ansys-fluent-core) gerekli ama "
+            "bu Python'da bulunamadı.\n\n"
+            "Kuruluysa klasörünü automesh-yollar.txt dosyasına yazın, "
+            "ayrıntı için 'py -m automesh doctor' çalıştırın.\n\n"
+            "Ayrıntılar günlük penceresinde.")
+        return False
 
     def _stop(self) -> None:
         if self.run is not None and self.run.running:
@@ -887,6 +926,17 @@ class AutoMeshApp:
 
 
 # --------------------------------------------------------------------------
+
+def _pyfluent_available() -> bool:
+    """PyFluent import edilebiliyor mu (testlerde değiştirilebilsin diye ayrı)."""
+    import importlib
+
+    try:
+        importlib.import_module("ansys.fluent.core")
+        return True
+    except Exception:
+        return False
+
 
 def _tag_for(level: int) -> str:
     if level >= logging.ERROR:

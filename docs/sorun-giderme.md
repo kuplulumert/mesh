@@ -155,6 +155,22 @@ olarak kaydedip devam eder. Sizin sürümünüzdeki doğru yolu
 `src/automesh/fluent/tui.py` içindeki ilgili fonksiyona ekleyin — düzenlenmesi
 gereken tek dosya orasıdır.
 
+## "Mesh oluştur" çalışmıyor
+
+Arayüz artık gerçek koşudan önce PyFluent'i kontrol ediyor. Bulamazsa iş hiç
+başlamaz; günlükte sebep ve çözüm yazar (`ansys` paketi yok mu, var ama alt
+paketleri mi eksik). Sık görülen durum: **analiz çalışıyor, mesh çalışmıyor** —
+analiz Fluent'e hiç dokunmaz, mesh dokunur.
+
+Çözüm sırası:
+
+1. `py -m automesh doctor` - hangi `ansys` klasörünün görüldüğünü söyler.
+2. PyFluent başka bir klasöre kuruluysa (`pip install --target D:\Work\plm`
+   gibi) o klasörü `automesh-yollar.txt` dosyasına yazın. Başlatıcı onu
+   `sys.path`'in başına ekler; `AutoMesh.pyw` ile açtığınızda `PYTHONPATH`
+   ayarı yapmanıza gerek kalmaz.
+3. Fluent'e hiç dokunmadan akışı denemek için **Prova** kutusunu işaretleyin.
+
 ## Arayüz açılmıyor
 
 **`Arayüz için Tkinter gerekli ama bulunamadı`**

@@ -382,3 +382,79 @@ def test_main_passes_the_geometry_through(fake_tk, tmp_path, monkeypatch):
                         lambda root, geometry=None: seen.setdefault("g", geometry))
     module.main("C:/cad/parca.scdoc")
     assert seen["g"] == "C:/cad/parca.scdoc"
+
+
+def test_real_run_without_pyfluent_says_why(fake_tk, tmp_path, monkeypatch,
+                                            step_file):
+    """PyFluent yoksa düğme sessiz kalmamalı: sebep ve çözüm görünmeli."""
+    module, messagebox = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_pyfluent_available", lambda: False)
+
+    app.var_geometry.set(step_file)
+    app.var_output.set(str(tmp_path / "run"))
+    app.var_dry_run.set(False)
+
+    app._guard("Mesh oluşturma", lambda: app._start("run", mode="simple"))
+
+    assert app.run is None, "PyFluent yokken iş başlatılmamalı"
+    assert messagebox.showerror.call_count == 1
+    logged = _logged_text(app)
+    assert "PyFluent" in logged
+    assert "automesh doctor" in logged
+    assert "Prova" in logged
+
+
+def test_real_run_starts_when_pyfluent_is_there(fake_tk, tmp_path, monkeypatch,
+                                                step_file):
+    module, messagebox = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_pyfluent_available", lambda: True)
+    started = {}
+    monkeypatch.setattr(module, "BackgroundRun",
+                        lambda settings, kind: started.setdefault(
+                            "run", types.SimpleNamespace(
+                                running=False, mode=kind, start=lambda: None,
+                                drain=lambda: [], proposals=None,
+                                metrics=None, error="")))
+
+    app.var_geometry.set(step_file)
+    app.var_output.set(str(tmp_path / "run"))
+    app.var_dry_run.set(False)
+    app._start("run", mode="simple")
+
+    assert messagebox.showerror.call_count == 0
+    assert started["run"].mode == "run"
+
+
+def test_dry_run_never_needs_pyfluent(fake_tk, tmp_path, monkeypatch, step_file):
+    """Prova modu Fluent'e hiç dokunmaz; kontrol onu engellememeli."""
+    module, messagebox = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_pyfluent_available", lambda: False)
+
+    app.var_geometry.set(step_file)
+    app.var_output.set(str(tmp_path / "run"))
+    app.var_dry_run.set(True)
+    app._start("run", mode="simple")
+
+    assert messagebox.showerror.call_count == 0
+    assert app.run is not None
+    app.run.cancel()
+    app.run.join(15)
+
+
+def test_analysis_never_needs_pyfluent(fake_tk, tmp_path, monkeypatch, step_file):
+    """Analiz Fluent açmaz: PyFluent yokken de çalışmalı."""
+    module, messagebox = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_pyfluent_available", lambda: False)
+
+    app.var_geometry.set(step_file)
+    app.var_output.set(str(tmp_path / "run"))
+    app._start("propose", mode="simple")
+
+    assert messagebox.showerror.call_count == 0
+    assert app.run is not None and app.run.mode == "propose"
+    app.run.cancel()
+    app.run.join(10)
