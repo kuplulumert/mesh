@@ -561,3 +561,21 @@ def test_missing_groups_never_says_analyse_first():
         text = " ".join(explain_missing_groups(metrics, Config())).lower()
         assert "analiz edin" not in text
         assert text.strip()
+
+
+def test_simple_mode_sends_the_scdoc_itself_not_step(tmp_path):
+    """Gruplama kapalıyken .scdoc STEP'e çevrilmeden Fluent'e gitmeli."""
+    from automesh.config import Config
+    from automesh.geometry.spaceclaim import SpaceClaimAnalyzer
+
+    cfg = Config()
+    cfg.local_sizing.enabled = False
+    cfg.geometry.export_format = "auto"
+    analyzer = SpaceClaimAnalyzer()
+    assert analyzer._export_target("M:/CAD/Multicyclone.scdoc",
+                                   str(tmp_path), cfg) is None
+    assert analyzer._export_target("M:/CAD/part.scdocx",
+                                   str(tmp_path), cfg) is None
+    # SpaceClaim dışı girdilerde davranış değişmedi
+    assert analyzer._export_target("C:/cad/part.x_t", str(tmp_path),
+                                   cfg).endswith(".stp")

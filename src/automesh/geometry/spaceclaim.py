@@ -256,7 +256,15 @@ class SpaceClaimAnalyzer(GeometryAnalyzer):
         if fmt == "auto":
             # Yüzey grupları üretilecekse STEP işe yaramaz: STEP named
             # selection taşımaz.  .scdoc taşır ve Fluent Meshing onu okur.
-            fmt = "scdoc" if cfg.local_sizing.enabled else "step"
+            if cfg.local_sizing.enabled:
+                fmt = "scdoc"
+            elif extension(path) in (".scdoc", ".scdocx"):
+                # Gruplama yoksa SpaceClaim dosyası olduğu gibi Fluent'e
+                # gider: STEP'e çevirmek hiçbir şey kazandırmaz, kullanıcının
+                # kendi named selection'larını da kaybettirir.
+                return None
+            else:
+                fmt = "step"
         ext = _EXPORT_EXTENSIONS.get(fmt)
         if ext is None:
             raise GeometryAnalyzerError("Desteklenmeyen dışa aktarım formatı: {0}".format(fmt))
