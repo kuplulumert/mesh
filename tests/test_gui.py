@@ -541,8 +541,10 @@ def test_gui_failure_is_written_where_a_windowless_start_can_show_it(
     """pyw ile açılan pencerede hata ekrana düşmez; dosyaya yazılmalı."""
     import automesh.guiapp as guiapp
 
+    from automesh import launcher
+
     crash = tmp_path / "automesh-hata.txt"
-    monkeypatch.setattr(guiapp, "CRASH_LOG", str(crash))
+    monkeypatch.setattr(launcher, "CRASH_LOG", str(crash))
     fake = types.ModuleType("automesh.guiapp.app")
 
     def boom(geometry=None):

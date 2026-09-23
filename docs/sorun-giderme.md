@@ -162,6 +162,20 @@ Windows'ta python.org kurulumu Tkinter'ı içerir; Microsoft Store sürümünde
 bazen eksik olur. Çözüm: python.org'dan kurulum yapın ya da mevcut kurulumu
 **Değiştir (Modify)** ile onarıp "tcl/tk and IDLE" kutusunu işaretleyin.
 
+**`.exe` ve `.bat` çalıştırmak yasak**
+`AutoMesh.pyw` dosyasını kullanın: Python dosyası olduğu için AppLocker'ın
+betik kuralları (`.bat`, `.cmd`, `.ps1`, `.vbs`) kapsamına girmez. Kısayol
+için `py -m automesh kisayol`.
+
+**`AutoMesh.pyw` çift tıklayınca hiçbir şey olmuyor**
+Açılış hatası `%TEMP%\automesh-hata.txt` dosyasındadır. Aynı hatayı ekranda
+görmek için `AutoMesh-konsol.py` dosyasını çift tıklayın.
+
+**`.pyw` dosyası Not Defteri'nde açılıyor**
+Dosya ilişkilendirmesi bozulmuş. Sağ tık → *Birlikte aç* → *Başka bir
+uygulama seç* → `pythonw.exe` (Python kurulum klasöründe) → *Her zaman
+bunu kullan*.
+
 **`AutoMesh.bat` çift tıklayınca pencere açılıp kapanıyor**
 Başlatıcı pencereyi konsolsuz açar; açılış hatası `%TEMP%\automesh-hata.txt`
 dosyasına yazılır. Aynı hatayı ekranda görmek için:

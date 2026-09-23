@@ -153,6 +153,12 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--remove-path", metavar="KLASÖR",
                         help="Daha önce eklenmiş bir klasörü yoldan çıkar")
 
+    # ---- kisayol ---------------------------------------------------------
+    shortcut = sub.add_parser(
+        "kisayol", help="Masaüstüne ve Başlat menüsüne kısayol koy")
+    shortcut.add_argument("--sadece-masaustu", action="store_true",
+                          help="Başlat menüsüne ekleme")
+
     # ---- rules / config --------------------------------------------------
     sub.add_parser("rules", help="Teşhis kural tabanını listele")
 
@@ -383,6 +389,34 @@ def cmd_gui(args: argparse.Namespace) -> int:
     return gui_main(getattr(args, "geometry", None))
 
 
+def cmd_kisayol(args: argparse.Namespace) -> int:
+    """Çift tıklanacak kısayolu oluştur (``.exe``/``.bat`` gerektirmez)."""
+    import os
+
+    from . import launcher
+
+    root = os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__))))
+    kinds = ("desktop",) if args.sadece_masaustu else ("desktop", "programs")
+    results = launcher.create_shortcuts(root, kinds)
+
+    ok = False
+    for success, detail in results:
+        print(("[+] " if success else "[x] ") + detail)
+        ok = ok or success
+    print()
+    if ok:
+        print("Artık kısayola çift tıklamanız yeterli.")
+        print("Görev çubuğuna sabitlemek için kısayola sağ tıklayın.")
+        return 0
+
+    print("Kısayol oluşturulamadı. Elle yapmak için:")
+    print("  1) {0} dosyasına SAĞ tıklayın".format(
+        os.path.join(root, launcher.LAUNCHER_NAME)))
+    print("  2) Gönder > Masaüstü (kısayol oluştur) deyin")
+    return 2
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     from . import doctor as doctor_mod
 
@@ -521,6 +555,7 @@ def _print_plan(plan, cfg=None, diagonal=0.0) -> None:
 COMMANDS = {
     "run": cmd_run,
     "gui": cmd_gui,
+    "kisayol": cmd_kisayol,
     "doctor": cmd_doctor,
     "propose": cmd_propose,
     "analyze": cmd_analyze,

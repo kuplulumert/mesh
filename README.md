@@ -116,28 +116,41 @@ automesh gui
 
 ### Çift tıkla çalıştırma (kurulum gerekmez)
 
-Depo kökündeki **`AutoMesh.bat`** dosyasına çift tıklamak yeterli. Her seferinde
-komut yazmamak için bir kez **`Kisayol-Olustur.bat`**'ı çalıştırın: masaüstüne
-ve Başlat menüsüne `AutoMesh` kısayolu koyar (kısayola sağ tık → *Görev
-çubuğuna sabitle* de çalışır). Hiçbir şey kurmaz, sadece iki `.lnk` dosyası
-oluşturur.
+Depo kökündeki **`AutoMesh.pyw`** dosyasına çift tıklayın: arayüz açılır,
+konsol penceresi çıkmaz. `.pyw` bir Python dosyasıdır; çalıştıran da zaten
+izinli olan `pythonw.exe`'dir, yani `.exe` ve `.bat` çalıştırmayı engelleyen
+grup ilkeleri (AppLocker) bunu kapsamaz.
+
+Masaüstüne kısayol için bir kez:
+
+```bat
+py -m automesh kisayol
+```
+
+Masaüstüne ve Başlat menüsüne `AutoMesh` kısayolu koyar (sağ tık → *Görev
+çubuğuna sabitle* de çalışır). PowerShell'e dokunmaz: AppLocker açıkken
+PowerShell kısıtlı dil kipine düşüp `New-Object -ComObject`'i reddediyor,
+bu yüzden `.lnk` doğrudan Python'un COM çağrısıyla yazılıyor. O da
+engellenirse düz metin `.url` kısayoluna düşer; ikisi de olmazsa elle
+yapmanın yolunu yazar (`AutoMesh.pyw` → sağ tık → *Gönder* → *Masaüstü
+(kısayol oluştur)*).
+
+| Dosya | Ne zaman |
+|---|---|
+| `AutoMesh.pyw` | Normal kullanım - konsolsuz açılır |
+| `AutoMesh-konsol.py` | Pencere hiç açılmıyorsa: hata konsolda kalır |
+| `AutoMesh.bat` | `.bat` serbestse; aynı işi yapar |
+
+Açılışta bir şey patlarsa `%TEMP%\automesh-hata.txt` dosyasına yazılır -
+konsolsuz başlatmada hatanın tek kanıtı odur.
 
 Başlatıcı ne yapar:
 
 | Adım | Açıklama |
 |---|---|
-| Python bulur | Önce `AUTOMESH_PYTHON`, sonra `py`, sonra `python`. Bulduğunu **sınar** — Microsoft Store'un `python` kısayolu PATH'te görünür ama Python değildir |
-| Yolları hazırlar | Depodaki `src` ve `automesh-yollar.txt` içindeki klasörler `PYTHONPATH`'in başına eklenir (PyFluent başka yerde kuruluysa oraya yazın; örnek: `automesh-yollar.ornek.txt`) |
-| Ön kontrol yapar | `import automesh.guiapp.app` denenir. Başarısızsa hata **ekranda** kalır; başarılıysa pencere konsolsuz açılır |
-
-Kullanımlar:
-
-```bat
-AutoMesh.bat                     :: arayüzü aç (konsol penceresi kapanır)
-AutoMesh.bat konsol              :: arayüzü aç, günlüğü konsolda da gör
-AutoMesh.bat doctor              :: ortam kontrolü
-AutoMesh.bat run parca.scdoc --cores 8
-```
+| Yolları hazırlar | Depodaki `src` ve `automesh-yollar.txt` içindeki klasörler `sys.path`'in başına eklenir. PyFluent başka bir yere kuruluysa klasörünü oraya yazın (örnek: `automesh-yollar.ornek.txt`) - kurulum ya da `PYTHONPATH` ayarı gerekmez |
+| Arayüzü açar | Geometri yolu verilmişse alan dolu gelir |
+| Hatayı saklamaz | Açılış hatası `%TEMP%\automesh-hata.txt` dosyasına ve bir uyarı kutusuna yazılır |
 
 Bir geometriyi **kısayolun üzerine sürükleyip bırakırsanız** arayüz o dosya
 seçili olarak açılır. Aynısı komut satırından: `automesh gui parca.scdoc`.
