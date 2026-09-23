@@ -81,6 +81,11 @@ class GeometrySettings:
     #: SpaceClaim'in Fluent için yazacağı format.
     #: "auto" -> yüzey grupları açıksa .scdoc (grupları taşır), yoksa STEP.
     export_format: str = "auto"
+    #: Hazırlanan dosyanın yazılacağı klasör. Boşsa orkestratör çalışma
+    #: dizinini kullanır. Kaynak dosya ASLA üzerine yazılmaz.
+    export_dir: Optional[str] = None
+    #: Hazırlanan dosyanın adına eklenen son ek.
+    export_suffix: str = "_automesh"
     length_unit: Optional[str] = None          # override the detected unit
     # Flow hints - purely optional, they sharpen the boundary layer sizing.
     velocity: Optional[float] = None           # m/s

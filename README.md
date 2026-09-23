@@ -390,6 +390,15 @@ kapsam o grubun etiketi).
 > grupları yüzey etiketi (face label) olarak alır. `export_format: auto`
 > varsayılanı bunu kendisi halleder.
 
+**Hazırlanan dosya nereye yazılır:** Gruplar SpaceClaim'in belleğinde oluşur,
+kaydedilmezse Fluent'e ulaşmaz. Bu yüzden girdi zaten `.scdoc` olsa bile
+`<ad>_automesh.scdoc` adıyla **çalışma dizinine** yazılır ve Fluent'e o dosya
+verilir. Kaynak CAD dosyanızın üzerine **asla yazılmaz** - ağ sürücüsünde,
+salt okunur ya da başkasının da kullandığı bir dosya olabilir.
+
+Grupları gözünüzle görmek isterseniz o dosyayı SpaceClaim'de açıp **Groups**
+panelinden bakabilirsiniz.
+
 Örnek bir çalışmadan:
 
 | Grup | Kaynak | Yüzey | Boyutu belirleyen | Hücre boyutu |

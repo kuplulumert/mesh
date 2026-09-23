@@ -183,20 +183,35 @@ class SpaceClaimAnalyzer(GeometryAnalyzer):
             metrics = metrics_from_raw(raw)
             exported = raw.get("exported_path")
             if exported and os.path.isfile(exported):
-                # Keep the export alive after the temp dir goes away.
-                final = os.path.join(
-                    os.path.dirname(os.path.abspath(path)),
-                    os.path.basename(exported),
-                )
+                final = self._final_export_path(path, exported, cfg)
                 if os.path.abspath(final) != os.path.abspath(exported):
+                    os.makedirs(os.path.dirname(final), exist_ok=True)
                     shutil.copy2(exported, final)
                 metrics.raw["exported_path"] = final
-                log.info("SpaceClaim geometriyi dışa aktardı: %s", final)
+                log.info("Gruplanmış geometri hazırlandı: %s", final)
+                log.info("Bu dosyayı SpaceClaim'de açıp Groups panelinden "
+                         "grupları görebilirsiniz.")
             return metrics
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
 
     # ------------------------------------------------------------------
+    def _final_export_path(self, source: str, exported: str, cfg: Config) -> str:
+        """Hazırlanan dosyanın kalıcı yeri.
+
+        Kaynak dosyanın üzerine asla yazılmaz: kullanıcının CAD'i ağ
+        sürücüsünde, salt okunur ya da başkasının da kullandığı bir dosya
+        olabilir.  Varsayılan hedef çalışma dizinidir.
+        """
+        name = os.path.basename(exported)
+        folder = cfg.geometry.export_dir or os.path.dirname(os.path.abspath(source))
+        final = os.path.join(os.path.abspath(folder), name)
+        if os.path.abspath(final) == os.path.abspath(source):
+            stem, ext = os.path.splitext(name)
+            final = os.path.join(os.path.abspath(folder),
+                                 stem + "_automesh" + ext)
+        return final
+
     def _export_target(self, path: str, workdir: str, cfg: Config) -> Optional[str]:
         fmt = (cfg.geometry.export_format or "auto").lower()
         if fmt in ("none", "off"):
@@ -208,10 +223,15 @@ class SpaceClaimAnalyzer(GeometryAnalyzer):
         ext = _EXPORT_EXTENSIONS.get(fmt)
         if ext is None:
             raise GeometryAnalyzerError("Desteklenmeyen dışa aktarım formatı: {0}".format(fmt))
-        if extension(path) == ext:
-            return None           # already in the target format
+
+        # Girdi zaten hedef formatta olsa bile, yüzey grupları oluşturulacaksa
+        # dosyayı yazmak ZORUNDAYIZ: gruplar SpaceClaim'in belleğinde kalır ve
+        # kaydedilmezse Fluent'e hiç ulaşmaz.
+        if extension(path) == ext and not cfg.local_sizing.enabled:
+            return None
         stem = os.path.splitext(os.path.basename(path))[0]
-        return os.path.join(workdir, stem + ext)
+        suffix = cfg.geometry.export_suffix or "_automesh"
+        return os.path.join(workdir, stem + suffix + ext)
 
     def _materialise_script(self, destination: str, params_file: str) -> None:
         """Copy the template and bake the parameter path into it."""

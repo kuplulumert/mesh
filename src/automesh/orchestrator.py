@@ -162,6 +162,10 @@ class AutoMeshAgent:
     # stages before Fluent
     # ------------------------------------------------------------------
     def _analyze(self) -> None:
+        # Hazırlanan (gruplanmış) dosya çalışma dizinine yazılsın; kaynak CAD
+        # ağ sürücüsünde ya da salt okunur olabilir ve üzerine yazılmamalı.
+        if not self.cfg.geometry.export_dir:
+            self.cfg.geometry.export_dir = self.run_dir
         with timed("Geometri analizi", self.log):
             self.metrics = analyze_geometry(self.geometry_path, self.cfg)
         self._write("analysis.json", self.metrics.to_dict())

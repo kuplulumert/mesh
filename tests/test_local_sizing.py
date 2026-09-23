@@ -1,6 +1,7 @@
 """Yüzey gruplarına özel hücre boyutu testleri."""
 
 import math
+import os
 
 import pytest
 
@@ -431,3 +432,66 @@ def test_review_serialises_for_the_gui():
     plan = plan_mesh(metrics, Config())
     data = [r.to_dict() for r in review_groups(metrics.face_groups, plan, Config())]
     assert json.loads(json.dumps(data, ensure_ascii=False))[0]["divisions"] == 16
+
+
+# --------------------------------------------------------------------------
+# hazırlanan dosya (gruplar Fluent'e nasıl ulaşıyor)
+# --------------------------------------------------------------------------
+
+@pytest.fixture
+def analyzer(tmp_path):
+    from automesh.geometry.spaceclaim import SpaceClaimAnalyzer
+
+    exe = tmp_path / "SpaceClaim.exe"
+    exe.write_text("")
+    return SpaceClaimAnalyzer(exe=str(exe), script_api="252")
+
+
+def test_scdoc_input_is_still_exported_when_grouping(analyzer, tmp_path):
+    """Girdi zaten .scdoc olsa bile dosya yazılmalı.
+
+    Gruplar SpaceClaim'in belleğinde oluşur; kaydedilmezse Fluent'e hiç
+    ulaşmaz ve özellik sessizce hiçbir şey yapmamış olur.
+    """
+    cfg = Config()
+    target = analyzer._export_target("M:/CAD/Multicyclone.scdoc", str(tmp_path), cfg)
+    assert target is not None
+    assert target.endswith(".scdoc")
+    assert "Multicyclone_automesh" in os.path.basename(target)
+
+
+def test_scdoc_input_needs_no_export_without_grouping(analyzer, tmp_path):
+    cfg = Config()
+    cfg.local_sizing.enabled = False
+    cfg.geometry.export_format = "scdoc"
+    assert analyzer._export_target("M:/CAD/part.scdoc", str(tmp_path), cfg) is None
+
+
+def test_prepared_file_never_overwrites_the_source(analyzer, tmp_path):
+    """Kaynak CAD ağ sürücüsünde ya da salt okunur olabilir."""
+    source = tmp_path / "Multicyclone.scdoc"
+    source.write_text("")
+    cfg = Config()
+    cfg.geometry.export_dir = str(tmp_path)
+
+    # Betik kaynakla aynı adı döndürse bile üzerine yazılmamalı.
+    final = analyzer._final_export_path(str(source), str(tmp_path / "Multicyclone.scdoc"), cfg)
+    assert os.path.abspath(final) != os.path.abspath(str(source))
+    assert "_automesh" in os.path.basename(final)
+
+
+def test_prepared_file_goes_to_the_run_directory(analyzer, tmp_path):
+    cfg = Config()
+    cfg.geometry.export_dir = str(tmp_path / "run")
+    final = analyzer._final_export_path(
+        "M:/CAD/part.scdoc", "/tmp/part_automesh.scdoc", cfg)
+    assert os.path.dirname(os.path.abspath(final)) == os.path.abspath(
+        str(tmp_path / "run"))
+
+
+def test_orchestrator_points_the_export_at_the_run_directory(step_file, cfg, tmp_path):
+    from automesh.orchestrator import AutoMeshAgent
+
+    agent = AutoMeshAgent(step_file, cfg, str(tmp_path / "run"))
+    agent._analyze()
+    assert cfg.geometry.export_dir == str(tmp_path / "run")
