@@ -57,7 +57,25 @@ class AutoMeshApp:
         self._on_dry_run_toggled()
         if geometry:
             self.set_geometry(geometry)
+        self._log_environment()
         self._pump()
+
+    def _log_environment(self) -> None:
+        """Hangi Python ve PyFluent kullanılıyor - açılışta bir kez.
+
+        Arayüz komut satırından ve kısayoldan farklı yorumlayıcılarla
+        açılabiliyor; PyFluent birinde bulunup diğerinde bulunmayınca
+        "bazen çalışıyor" gibi görünüyordu. Bu satır farkı görünür kılar.
+        """
+        self._append("Python : {0}".format(sys.executable or "?"), "INFO")
+        if _pyfluent_available():
+            self._append("PyFluent: bulundu", "OK")
+        else:
+            self._append("PyFluent: BULUNAMADI - gerçek mesh çalışmaz "
+                         "(prova modu çalışır).", "WARNING")
+            self._append("  Çözüm:  py -m automesh doctor --add-path "
+                         "<PyFluent klasörü>", "INFO")
+        self._append("", "INFO")
 
     def set_geometry(self, path: str) -> None:
         """Dışarıdan gelen geometriyi alana yaz (kısayola sürükle-bırak)."""
@@ -619,8 +637,11 @@ class AutoMeshApp:
                 self._append("  " + line, "ERROR")
         self._append("", "INFO")
         self._append("Çözüm:", "OK")
-        self._append("  1) Kuruluysa klasörünü automesh-yollar.txt dosyasına "
-                     "yazın (örnek: automesh-yollar.ornek.txt).", "INFO")
+        self._append("  1) Kuruluysa klasörünü bir kez kaydedin:", "INFO")
+        self._append("       py -m automesh doctor --add-path "
+                     "D:\\Work\\plm", "INFO")
+        self._append("     (bu kayıt arayüzü hangi Python açarsa açsın "
+                     "okunur)", "INFO")
         self._append("  2) Ayrıntılı tanı:  py -m automesh doctor", "INFO")
         self._append("  3) Fluent'i hiç açmadan denemek için 'Prova' "
                      "kutusunu işaretleyin.", "INFO")

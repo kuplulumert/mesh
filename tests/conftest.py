@@ -73,3 +73,12 @@ def cfg(tmp_path):
     config.fluent.use_mock = True
     config.output.run_root = str(tmp_path / "runs")
     return config
+
+
+@pytest.fixture(autouse=True)
+def _isolate_user_paths_file(tmp_path_factory, monkeypatch):
+    """Kullanıcı geneli yol kaydı testlerde gerçek profile yazmasın."""
+    from automesh import launcher
+
+    target = tmp_path_factory.mktemp("automesh-yollar") / "yollar.txt"
+    monkeypatch.setattr(launcher, "USER_PATHS_FILE", str(target))

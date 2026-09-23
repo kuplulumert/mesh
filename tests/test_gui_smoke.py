@@ -458,3 +458,15 @@ def test_analysis_never_needs_pyfluent(fake_tk, tmp_path, monkeypatch, step_file
     assert app.run is not None and app.run.mode == "propose"
     app.run.cancel()
     app.run.join(10)
+
+
+def test_startup_logs_which_python_and_whether_pyfluent_is_there(
+        fake_tk, tmp_path, monkeypatch):
+    """Kısayol ve komut satırı farklı Python açabiliyor: fark görünür olsun."""
+    module, _ = fake_tk
+    monkeypatch.setattr(module, "_pyfluent_available", lambda: False)
+    app = _app(module, tmp_path, monkeypatch)
+    logged = _logged_text(app)
+    assert "Python :" in logged
+    assert "PyFluent: BULUNAMADI" in logged
+    assert "--add-path" in logged

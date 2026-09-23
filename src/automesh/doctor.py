@@ -226,9 +226,18 @@ def add_path(directory: str) -> Tuple[bool, str]:
     except OSError as exc:
         return False, "Yazılamadı ({0}): {1}".format(target, exc)
     verb = "Güncellendi" if already else "Eklendi"
-    return True, "{0}: {1}\n{2}Dosya: {3}\n{2}Yol sys.path'in başına " \
-                 "eklenir (PYTHONPATH ile aynı öncelik).".format(
-                     verb, directory, INFO, target)
+    message = "{0}: {1}\n{2}Dosya: {3}\n{2}Yol sys.path'in başına " \
+              "eklenir (PYTHONPATH ile aynı öncelik).".format(
+                  verb, directory, INFO, target)
+
+    # .pth yalnızca onu yazan yorumlayıcıda geçerli. AutoMesh.pyw dosyasını
+    # başka bir Python açabildiği için aynı klasörü yorumlayıcıdan bağımsız
+    # listeye de yazıyoruz.
+    from .launcher import remember_path
+
+    ok, note = remember_path(directory)
+    message += "\n{0}{1}{2}".format(INFO, "" if ok else "Uyarı: ", note)
+    return True, message
 
 
 # --------------------------------------------------------------------------

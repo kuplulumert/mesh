@@ -211,3 +211,55 @@ def test_cli_shortcut_explains_the_manual_way_on_failure(monkeypatch, capsys):
     assert cli.main(["kisayol"]) == 2
     out = capsys.readouterr().out
     assert "SAĞ tıklayın" in out and "AutoMesh.pyw" in out
+
+
+# -- yorumlayıcıdan bağımsız yol kaydı -------------------------------------
+
+def test_user_paths_file_is_read_too(tmp_path, monkeypatch):
+    """`py` ile bulunan PyFluent, `.pyw`'yi açan Python'da da bulunmalı."""
+    os.makedirs(str(tmp_path / "src"))
+    user = tmp_path / "yollar.txt"
+    user.write_text("# yorum\nD:\\Work\\plm\n", encoding="utf-8")
+    monkeypatch.setattr(launcher, "USER_PATHS_FILE", str(user))
+    assert launcher.extra_paths(str(tmp_path)) == [str(tmp_path / "src"),
+                                                   "D:\\Work\\plm"]
+
+
+def test_user_and_repo_lists_do_not_duplicate(tmp_path, monkeypatch):
+    os.makedirs(str(tmp_path / "src"))
+    (tmp_path / launcher.PATHS_FILE).write_text("D:\\Work\\plm\n",
+                                                encoding="utf-8")
+    user = tmp_path / "yollar.txt"
+    user.write_text("D:\\Work\\plm\n", encoding="utf-8")
+    monkeypatch.setattr(launcher, "USER_PATHS_FILE", str(user))
+    assert launcher.extra_paths(str(tmp_path)).count("D:\\Work\\plm") == 1
+
+
+def test_remember_path_writes_and_is_idempotent(tmp_path, monkeypatch):
+    user = tmp_path / "kayit" / "yollar.txt"
+    monkeypatch.setattr(launcher, "USER_PATHS_FILE", str(user))
+    folder = tmp_path / "plm"
+    os.makedirs(str(folder))
+
+    ok, _ = launcher.remember_path(str(folder))
+    assert ok and user.is_file()
+    ok, note = launcher.remember_path(str(folder))
+    assert ok and "Zaten" in note
+    assert user.read_text(encoding="utf-8").count(str(folder)) == 1
+
+
+def test_doctor_add_path_also_records_it_for_other_interpreters(
+        tmp_path, monkeypatch):
+    """.pth yalnızca onu yazan Python'da geçerli; kayıt her yerde geçerli."""
+    from automesh import doctor
+
+    user = tmp_path / "yollar.txt"
+    monkeypatch.setattr(launcher, "USER_PATHS_FILE", str(user))
+    monkeypatch.setattr(doctor, "pth_path",
+                        lambda: str(tmp_path / "automesh-extra-paths.pth"))
+    folder = tmp_path / "plm"
+    os.makedirs(str(folder))
+
+    ok, message = doctor.add_path(str(folder))
+    assert ok, message
+    assert str(folder) in user.read_text(encoding="utf-8")

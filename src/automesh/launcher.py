@@ -30,6 +30,13 @@ PATHS_FILE = "automesh-yollar.txt"
 #: Konsolsuz başlatmada hatanın yazıldığı dosya.
 CRASH_LOG = os.path.join(tempfile.gettempdir(), "automesh-hata.txt")
 
+#: Yorumlayıcıdan bağımsız yol kaydı. ``doctor --add-path`` buraya da yazar;
+#: böylece ``py`` ile çalışan kurulumda bulunan PyFluent, ``.pyw`` dosyasını
+#: açan başka bir Python'da da bulunur.
+USER_PATHS_FILE = os.path.join(
+    os.environ.get("APPDATA") or os.path.expanduser("~/.config"),
+    "automesh", "yollar.txt")
+
 SHORTCUT_NAME = "AutoMesh"
 LAUNCHER_NAME = "AutoMesh.pyw"
 
@@ -43,25 +50,60 @@ def repo_root(script: str) -> str:
     return os.path.dirname(os.path.abspath(script))
 
 
+def _read_list(path: str) -> List[str]:
+    """Her satırda bir klasör; boş satırlar ve ``#`` yorumları atlanır."""
+    if not os.path.isfile(path):
+        return []
+    try:
+        with io.open(path, encoding="utf-8", errors="replace") as handle:
+            lines = handle.readlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        entry = line.strip().strip('"')
+        if entry and not entry.startswith("#"):
+            out.append(os.path.expandvars(entry))
+    return out
+
+
 def extra_paths(root: str) -> List[str]:
-    """``src`` + kullanıcının yazdığı ek klasörler, yazıldıkları sırada."""
+    """``src`` + depo listesi + kullanıcı geneli liste, yazıldıkları sırada."""
     found: List[str] = []
     src = os.path.join(root, "src")
     if os.path.isdir(src):
         found.append(src)
 
-    listing = os.path.join(root, PATHS_FILE)
-    if os.path.isfile(listing):
-        try:
-            with io.open(listing, encoding="utf-8", errors="replace") as handle:
-                lines = handle.readlines()
-        except OSError:
-            lines = []
-        for line in lines:
-            entry = line.strip().strip('"')
-            if entry and not entry.startswith("#"):
-                found.append(os.path.expandvars(entry))
+    for entry in _read_list(os.path.join(root, PATHS_FILE)):
+        if entry not in found:
+            found.append(entry)
+    for entry in _read_list(USER_PATHS_FILE):
+        if entry not in found:
+            found.append(entry)
     return found
+
+
+def remember_path(directory: str) -> Tuple[bool, str]:
+    """Bir klasörü kullanıcı geneli listeye ekle (``doctor --add-path``).
+
+    ``.pth`` kaydı yalnızca onu yazan yorumlayıcıda geçerlidir; bu dosya
+    ise hangi Python başlatırsa başlatsın okunur.
+    """
+    directory = os.path.abspath(os.path.expandvars(os.path.expanduser(directory)))
+    current = _read_list(USER_PATHS_FILE)
+    if any(os.path.normcase(entry) == os.path.normcase(directory)
+           for entry in current):
+        return True, "Zaten kayıtlı: {0}".format(USER_PATHS_FILE)
+    current.append(directory)
+    try:
+        os.makedirs(os.path.dirname(USER_PATHS_FILE), exist_ok=True)
+        with io.open(USER_PATHS_FILE, "w", encoding="utf-8") as handle:
+            handle.write("# AutoMesh basit modda okunan ek modul klasorleri\n")
+            for entry in current:
+                handle.write(entry + "\n")
+    except OSError as exc:
+        return False, "Yazılamadı ({0}): {1}".format(USER_PATHS_FILE, exc)
+    return True, "Eklendi: {0}".format(USER_PATHS_FILE)
 
 
 def prepare_path(root: str) -> List[str]:
