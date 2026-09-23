@@ -15,6 +15,7 @@ import logging
 import os
 import subprocess
 import sys
+import traceback
 from typing import Optional
 
 import tkinter as tk
@@ -241,16 +242,21 @@ class AutoMeshApp:
         bar = ttk.Frame(parent)
         bar.grid(row=row, column=0, sticky="ew", pady=(0, PAD))
 
-        self.btn_analyze = ttk.Button(bar, text="1. Geometriyi analiz et",
-                                      command=lambda: self._start("analyze"))
+        self.btn_analyze = ttk.Button(
+            bar, text="1. Geometriyi analiz et",
+            command=lambda: self._guard("Geometri analizi",
+                                        lambda: self._start("propose")))
         self.btn_analyze.pack(side="left")
 
-        self.btn_plan = ttk.Button(bar, text="2. Ölçüm ve öneriler",
-                                   command=lambda: self._start("propose"))
+        self.btn_plan = ttk.Button(
+            bar, text="2. Yüzey boyutları",
+            command=lambda: self._guard("Yüzey boyutları", self._edit_sizing))
         self.btn_plan.pack(side="left", padx=(PAD, 0))
 
-        self.btn_run = ttk.Button(bar, text="3. Mesh oluştur",
-                                  command=lambda: self._start("run"))
+        self.btn_run = ttk.Button(
+            bar, text="3. Mesh oluştur",
+            command=lambda: self._guard("Mesh oluşturma",
+                                        lambda: self._start("run")))
         self.btn_run.pack(side="left", padx=(PAD, 0))
 
         self.btn_stop = ttk.Button(bar, text="Durdur", command=self._stop,
@@ -280,12 +286,16 @@ class AutoMeshApp:
                   foreground="#1b5e20").grid(row=1, column=0, sticky="w")
         buttons = ttk.Frame(bar)
         buttons.grid(row=1, column=1, sticky="e")
-        self.btn_open_cad = ttk.Button(buttons, text="SpaceClaim'de aç",
-                                       command=self._open_in_spaceclaim,
-                                       state="disabled")
+        self.btn_open_cad = ttk.Button(
+            buttons, text="SpaceClaim'de aç",
+            command=lambda: self._guard("SpaceClaim'de açma",
+                                        self._open_in_spaceclaim),
+            state="disabled")
         self.btn_open_cad.pack(side="left", padx=(0, PAD))
-        self.btn_sizing = ttk.Button(buttons, text="Yüzey boyutlarını düzenle",
-                                     command=self._edit_sizing, state="disabled")
+        self.btn_sizing = ttk.Button(
+            buttons, text="Kademeyi yeniden seç",
+            command=lambda: self._guard("Kademe seçimi", self._reopen_proposals),
+            state="disabled")
         self.btn_sizing.pack(side="left")
 
     # -- günlük ----------------------------------------------------------
@@ -318,6 +328,34 @@ class AutoMeshApp:
         ttk.Label(bar, textvariable=self.var_status).grid(row=0, column=0, sticky="w")
         self.progress = ttk.Progressbar(bar, mode="indeterminate", length=180)
         self.progress.grid(row=0, column=1, sticky="e")
+
+    # ------------------------------------------------------------------
+    # hata görünürlüğü
+    # ------------------------------------------------------------------
+    def _guard(self, label: str, action):
+        """Bir düğme eylemini çalıştır; hatayı yut değil, göster.
+
+        Tkinter geri çağrımlarındaki istisnalar stderr'e gider ve pythonw ile
+        başlatıldığında hiçbir yere görünmez: pencere "hiçbir şey yapmamış"
+        gibi durur.  Hatayı hem günlüğe hem kullanıcıya taşıyoruz.
+        """
+        try:
+            return action()
+        except Exception:
+            detail = traceback.format_exc()
+            self._append("{0} sırasında hata:".format(label), "ERROR")
+            for line in detail.strip().splitlines():
+                self._append("  " + line, "ERROR")
+            self.var_status.set("Hata: {0}".format(label))
+            try:
+                self._set_busy(False)
+            except Exception:
+                pass
+            messagebox.showerror(
+                "AutoMesh - {0}".format(label),
+                "{0}\n\nAyrıntı günlük penceresinde.".format(
+                    detail.strip().splitlines()[-1]))
+            return None
 
     # ------------------------------------------------------------------
     # dosya seçiciler
@@ -399,7 +437,7 @@ class AutoMeshApp:
 
         self._clear_log()
         label = {"analyze": "Geometri analizi", "plan": "Plan hesaplama",
-                 "propose": "Ölçüm ve öneriler", "run": "Mesh oluşturma"}[mode]
+                 "propose": "Geometri analizi", "run": "Mesh oluşturma"}[mode]
         self._append("=== {0} başlıyor ===".format(label), "OK")
         if mode == "run" and settings.dry_run:
             self._append(
@@ -436,18 +474,26 @@ class AutoMeshApp:
     # kuyruk pompası
     # ------------------------------------------------------------------
     def _pump(self) -> None:
-        if self.run is not None:
-            for message in self.run.drain():
-                if message.kind == LOG:
-                    self._append(message.text, _tag_for(message.level))
-                elif message.kind == ERROR:
-                    self._append(message.text, "ERROR")
-                elif message.kind == DONE:
-                    self._finish(message.result)
-                    self._remember_prepared_file()
-                    if self.run is not None and self.run.mode == "propose":
-                        self._show_proposals()
-        self.root.after(150, self._pump)
+        """Kuyruğu boşalt. Bu döngü asla kırılmamalı: kırılırsa günlük akışı
+        durur ve pencere donmuş gibi görünür."""
+        try:
+            if self.run is not None:
+                for message in self.run.drain():
+                    if message.kind == LOG:
+                        self._append(message.text, _tag_for(message.level))
+                    elif message.kind == ERROR:
+                        self._append(message.text, "ERROR")
+                    elif message.kind == DONE:
+                        self._finish(message.result)
+                        self._remember_prepared_file()
+                        if self.run is not None and self.run.mode == "propose":
+                            self._show_proposals()
+        except Exception:
+            for line in traceback.format_exc().strip().splitlines():
+                self._append("  " + line, "ERROR")
+            self._set_busy(False)
+        finally:
+            self.root.after(150, self._pump)
 
     def _finish(self, result) -> None:
         self._set_busy(False)
@@ -455,6 +501,12 @@ class AutoMeshApp:
         if result is None:
             if self.run is not None and self.run.error:
                 self.var_status.set("Hata ile sonuçlandı.")
+            elif self.run is not None and self.run.mode == "analyze":
+                self.var_status.set("Analiz tamam.")
+                self._append("", "INFO")
+                self._append(
+                    "Sıradaki adım: '2. Ölçüm ve öneriler' - mesh kademesini "
+                    "ve yüzey boyutlarını orada seçersiniz.", "OK")
             else:
                 self.var_status.set("Tamamlandı.")
             return
@@ -507,13 +559,20 @@ class AutoMeshApp:
         run = self.run
         if run is None or not run.proposals:
             return
+        self._last_metrics = run.metrics
+        self._last_proposals = run.proposals
+        self.btn_sizing.configure(state="normal")
+        self._choose_proposal(run.metrics, run.proposals)
+
+    def _choose_proposal(self, metrics, proposals) -> None:
         from .proposals_dialog import ProposalDialog
 
-        chosen = ProposalDialog(self.root, run.metrics, run.proposals).show()
+        chosen = ProposalDialog(self.root, metrics, proposals).show()
         if chosen is None:
             self._append("Kademe seçilmedi - boyutlandırma otomatik kalıyor.", "INFO")
             self._clear_choice()
             return
+        self._collect()      # widget'lardaki güncel değerleri al
         self.settings.chosen_label = chosen.label
         self.settings.chosen_min_size = chosen.plan.min_size
         self.settings.chosen_max_size = chosen.plan.max_size
@@ -526,12 +585,20 @@ class AutoMeshApp:
             self._append("! " + warning, "WARNING")
         self.var_status.set("Kademe seçildi: {0}".format(chosen.label))
         # Kademe seçildikten sonra yüzey boyutlarını gözden geçirme sırası.
-        self._last_metrics = run.metrics
-        self.btn_sizing.configure(
-            state="normal" if getattr(run.metrics, "face_groups", None) else "disabled")
-        if getattr(run.metrics, "face_groups", None) and self.var_local_sizing.get():
+        if getattr(metrics, "face_groups", None) and self.var_local_sizing.get():
             self._edit_sizing()
         self._append("Şimdi '3. Mesh oluştur' ile devam edebilirsiniz.", "INFO")
+
+    def _reopen_proposals(self) -> None:
+        """Kademe seçim ekranını yeniden aç (yeni analiz yapmadan)."""
+        metrics = getattr(self, "_last_metrics", None)
+        proposals = getattr(self, "_last_proposals", None)
+        if metrics is None or not proposals:
+            messagebox.showinfo(
+                "AutoMesh",
+                "Önce '1. Geometriyi analiz et' ile geometriyi okutun.")
+            return
+        self._choose_proposal(metrics, proposals)
 
     def _open_in_spaceclaim(self) -> None:
         """Hazırlanan (gruplanmış) dosyayı SpaceClaim'de aç."""

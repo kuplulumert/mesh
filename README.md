@@ -122,8 +122,8 @@ Pencerede:
 | **Mesh ayarları** | Çekirdek sayısı, akış, hacim doldurma, hücre sınırı, deneme sayısı, prizma açık/kapalı, **geometri birimi** ve **gösterim birimi** |
 | **Akış bilgisi** | y+, hız, yoğunluk, viskozite, karakteristik uzunluk — doldurursanız ilk katman yüksekliği hesaplanır |
 | **Çalıştırma** | Fluent penceresini göster (varsayılan açık), bitince Fluent açık kalsın, prova modu + senaryo, Claude danışmanı, ANSYS sürümü |
-| **Üç düğme** | `1. Geometriyi analiz et` → `2. Ölçüm ve öneriler` → `3. Mesh oluştur` |
-| **Yüzey boyutlarını düzenle** | Grupların bölme sayılarını seçme ekranını açar |
+| **Üç düğme** | `1. Geometriyi analiz et` → `2. Yüzey boyutları` → `3. Mesh oluştur` |
+| **Kademeyi yeniden seç** | Mesh kademesi ekranını yeniden açar (yeni analiz yapmadan) |
 | **Seçili kademe satırı** | Hangi mesh kademesini seçtiğinizi gösterir; "Seçimi temizle" ile otomatiğe döner |
 | **Günlük** | Agent'ın kararları canlı akar: teşhisler sarı, hatalar kırmızı, başarı yeşil |
 | **Durdur** | Çalışmayı bir sonraki adımda temizce keser; Fluent düzgün kapatılır ve rapor yine yazılır |
@@ -172,8 +172,23 @@ automesh run parca.scdoc --keep-open    :: göster ve bitince açık bırak
 
 ### Ölçüm ve öneri ekranı
 
-`2. Ölçüm ve öneriler` düğmesi Fluent'i hiç açmadan geometriyi ölçer ve bir
-seçim penceresi açar:
+`1. Geometriyi analiz et` düğmesi Fluent'i hiç açmadan geometriyi ölçer ve
+ardından iki seçim penceresini sırayla açar. Akış şöyle:
+
+```
+[1. Geometriyi analiz et]
+      ↓  SpaceClaim headless: ölçer, grupları oluşturur
+   Ölçüm ve kademe ekranı      -> hangi çözünürlükte meshleyeyim?
+      ↓
+   Yüzey boyutları ekranı      -> hangi grubu kaça böleyim?
+      ↓
+[3. Mesh oluştur]
+```
+
+`2. Yüzey boyutları` düğmesi ikinci ekranı istediğiniz zaman yeniden açar;
+yeni bir analiz başlatmaz.
+
+Birinci ekran:
 
 **Solda ölçülen uzunluklar** — sınır kutusu, köşegen, en küçük özellik, en
 kısa kenar, en küçük eğrilik yarıçapı, en ince kesit, özellik aralığı. Her
@@ -399,13 +414,12 @@ salt okunur ya da başkasının da kullandığı bir dosya olabilir.
 ### Grupları SpaceClaim'de görmek
 
 Adlandırma **SpaceClaim analizi sırasında** olur - yani `1. Geometriyi analiz
-et` ve `2. Ölçüm ve öneriler` düğmelerinde de, mesh'ten çok önce. Üç yerden
-görebilirsiniz:
+et` düğmesinde, mesh'ten çok önce. Üç yerden görebilirsiniz:
 
 | Nerede | Nasıl |
 |---|---|
 | Arayüz günlüğü | Analiz biter bitmez `--- Yüzey grupları ---` bölümü akar |
-| Seçim ekranı | **Yüzey boyutlarını düzenle** düğmesi |
+| Seçim ekranı | **2. Yüzey boyutları** düğmesi |
 | **SpaceClaim** | **SpaceClaim'de aç** düğmesi, ya da "Analiz sonrası SpaceClaim'de aç" kutusu |
 
 SpaceClaim açıldığında grupları sol taraftaki **Groups** panelinde
