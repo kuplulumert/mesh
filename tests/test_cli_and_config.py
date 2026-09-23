@@ -243,3 +243,18 @@ def test_open_cad_defaults_to_off(step_file):
     cfg = _load_config(build_parser().parse_args(["analyze", step_file]))
     assert cfg.geometry.open_in_spaceclaim is False
     assert cfg.geometry.spaceclaim_headless is True
+
+
+def test_cli_simple_flag_disables_face_naming(step_file, tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run(geometry, cfg, out, cancel=None):
+        captured["cfg"] = cfg
+        from automesh.models import RunResult
+        return RunResult(success=True, run_dir=str(tmp_path), message="ok")
+
+    monkeypatch.setattr("automesh.orchestrator.run_agent", fake_run)
+    main(["run", step_file, "--dry-run", "--simple"])
+    cfg = captured["cfg"]
+    assert cfg.local_sizing.enabled is False
+    assert cfg.geometry.open_in_spaceclaim is False

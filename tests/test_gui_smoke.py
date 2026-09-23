@@ -202,3 +202,78 @@ def test_every_button_command_is_callable(fake_tk, tmp_path, monkeypatch):
                  "_pick_config", "_remember_prepared_file", "_guard",
                  "_reopen_proposals", "_choose_proposal", "_show_proposals"):
         assert callable(getattr(app, name)), name
+
+
+# --------------------------------------------------------------------------
+# basit / gelişmiş sekmeler
+# --------------------------------------------------------------------------
+
+def test_both_tabs_build(fake_tk, tmp_path, monkeypatch):
+    """İki sekme de kurulmalı; biri patlarsa pencere hiç açılmaz."""
+    module, _ = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    assert app.btn_simple_run is not None      # basit sekme
+    assert app.btn_analyze is not None         # gelişmiş sekme
+    # Her iki sekmenin düğmeleri de meşgulken kilitlenmeli
+    assert app.btn_simple_run in app._action_buttons
+    assert app.btn_run in app._action_buttons
+
+
+def test_simple_button_runs_without_face_naming(fake_tk, tmp_path, monkeypatch,
+                                                step_file):
+    """Basit düğme uçtan uca meshlemeli ve gruplamayı hiç açmamalı."""
+    module, messagebox = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    app.var_geometry.set(step_file)
+    app.var_output.set(str(tmp_path / "run"))
+    app.var_dry_run.set(True)
+
+    app._guard("Mesh oluşturma", lambda: app._start("run", mode="simple"))
+
+    assert messagebox.showerror.call_count == 0
+    assert app.run is not None and app.run.mode == "run"
+    assert app.run.settings.is_simple
+    assert app.run.settings.to_config().local_sizing.enabled is False
+    app.run.cancel()
+    app.run.join(15)
+
+
+def test_simple_run_never_opens_a_dialog(fake_tk, tmp_path, monkeypatch,
+                                         step_file):
+    """Basit modda kademe/boyut ekranı açılmamalı - tek düğme, tek akış."""
+    import time
+
+    module, _ = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    opened = []
+    monkeypatch.setattr(app, "_show_proposals", lambda: opened.append("kademe"))
+    monkeypatch.setattr(app, "_edit_sizing", lambda: opened.append("boyut"))
+
+    app.var_geometry.set(step_file)
+    app.var_output.set(str(tmp_path / "run"))
+    app.var_dry_run.set(True)
+    app._start("run", mode="simple")
+
+    deadline = time.time() + 60
+    while app.run.running and time.time() < deadline:
+        app._pump()
+        time.sleep(0.01)
+    app.run.join(15)
+    app._pump()
+
+    assert opened == []
+    assert app.last_result is not None and app.last_result.success
+
+
+def test_tab_change_switches_the_mode(fake_tk, tmp_path, monkeypatch):
+    module, _ = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    app.notebook.index = lambda _what: 1
+    app._on_tab_changed()
+    assert app._mode == "advanced"
+    assert app._collect().mode == "advanced"
+
+    app.notebook.index = lambda _what: 0
+    app._on_tab_changed()
+    assert app._mode == "simple"
+    assert app._collect().is_simple

@@ -32,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  automesh propose manifold.stp     (ölçümler + mesh kademeleri)\n"
             "  automesh run manifold.stp --level fine\n"
             "  automesh run manifold.scdoc --divisions inlet=24\n"
+            "  automesh run manifold.scdoc --simple   (yüzey isimlendirme yok)\n"
         ),
     )
     parser.add_argument("--version", action="version",
@@ -84,6 +85,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--divisions", action="append", default=[], metavar="GRUP=N",
                      help="Bir yüzey grubunun bölme sayısı, örn. inlet=24 "
                           "(birden çok kez verilebilir)")
+    run.add_argument("--simple", action="store_true",
+                     help="Basit mod: yüzey isimlendirme/gruplama hiç "
+                          "çalışmaz, yalnızca global boyutlandırma")
     run.add_argument("--no-local-sizing", action="store_true",
                      help="Yüzey gruplarına özel boyut verme")
     run.add_argument("--min-local-size",
@@ -199,8 +203,11 @@ def _apply_run_flags(cfg: Config, args: argparse.Namespace) -> Config:
         cfg.planning.override_growth_rate = args.growth
     if args.layers is not None:
         cfg.planning.override_layer_count = args.layers
-    if args.no_local_sizing:
+    if args.no_local_sizing or getattr(args, "simple", False):
         cfg.local_sizing.enabled = False
+    if getattr(args, "simple", False):
+        # Basit modda SpaceClaim dokümanına hiç dokunulmaz.
+        cfg.geometry.open_in_spaceclaim = False
     if args.min_local_size:
         cfg.local_sizing.absolute_floor = parse_length(args.min_local_size)
     for item in args.divisions or []:

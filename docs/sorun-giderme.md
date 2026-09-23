@@ -202,6 +202,19 @@ o durumda ilerlemeyi agent günlüğünden takip edin.
 Mesh bitince pencere hemen kapanıyorsa "Bitince Fluent açık kalsın" kutusunu
 (ya da `--keep-open`) kullanın.
 
+## Gelişmiş akış takıldı, sadece mesh almak istiyorum
+
+**Basit** sekmesine geçin: yüzey isimlendirme/gruplama hiç çalışmaz,
+SpaceClaim dokümanına dokunulmaz, ara ekran çıkmaz. Geometriyi seçip
+"Mesh oluştur"a basmanız yeterli.
+
+```bat
+automesh run parca.scdoc --cores 8 --simple
+```
+
+Boyutlandırma algoritması iki modda da aynıdır; basit modda yalnızca yüzey
+gruplarına özel kontroller devre dışıdır.
+
 ## "Yüzey boyutları" ekranı açılmıyor, grup yok diyor
 
 Analiz çalıştı ama boyut verilecek yüzey grubu çıkmadı. Arayüz artık

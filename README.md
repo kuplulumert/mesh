@@ -15,11 +15,14 @@ akışa geçme gibi düzeltmeleri kendi uygular ve tekrar dener.
                         +--------------------------------------  yetersiz mi?
 ```
 
-İki kullanım biçimi var — masaüstü arayüzü ya da tek komut:
+Arayüzde iki çalışma biçimi var: **Basit** (yüzey isimlendirme yok, tek
+düğmeyle mesh) ve **Gelişmiş** (ölçüm, kademe ve yüzey boyutu ekranlarıyla
+tam akış). Komut satırından da aynısı:
 
 ```bat
 automesh doctor                  :: ortam kontrolü - önce bunu çalıştırın
 automesh gui                     :: pencereyi aç, geometriyi tıklayarak seç
+automesh run parca.scdoc --simple :: basit mod: yalnızca global boyutlandırma
 automesh propose manifold.stp    :: ölçümler + seçilebilir mesh kademeleri
 automesh run manifold.scdoc      :: komut satırı
 ```
@@ -114,7 +117,22 @@ automesh gui
 Depo kökündeki **`AutoMesh.bat`** dosyasına çift tıklamak da aynı işi yapar
 (varsa `.venv`'i kendisi bulur).
 
-Pencerede:
+Pencere iki sekmeye ayrılmıştır:
+
+### Basit sekme (varsayılan)
+
+Yüzey isimlendirme/gruplama **hiç çalışmaz**. SpaceClaim dokümanına
+dokunulmaz, named selection oluşturulmaz. Geometriyi seçip **Mesh oluştur**'a
+basarsınız; boyutlar geometriden otomatik hesaplanır, ara ekran çıkmaz.
+
+Elinizin altında her zaman çalışan bir yol olsun diye ayrıldı: gelişmiş
+akıştaki bir sorun bu sekmeyi etkilemez.
+
+```bat
+automesh run parca.scdoc --simple    :: komut satırı karşılığı
+```
+
+### Gelişmiş sekme
 
 | Bölüm | Ne yapar |
 |---|---|
@@ -172,8 +190,8 @@ automesh run parca.scdoc --keep-open    :: göster ve bitince açık bırak
 
 ### Ölçüm ve öneri ekranı
 
-`1. Geometriyi analiz et` düğmesi Fluent'i hiç açmadan geometriyi ölçer ve
-ardından iki seçim penceresini sırayla açar. Akış şöyle:
+Gelişmiş sekmedeki `1. Geometriyi analiz et` düğmesi Fluent'i hiç açmadan
+geometriyi ölçer ve ardından iki seçim penceresini sırayla açar. Akış şöyle:
 
 ```
 [1. Geometriyi analiz et]
@@ -614,6 +632,7 @@ automesh config -o automesh.json          # örnek konfigürasyon üret
 | `--unit mm` | geometrinin gerçek birimini zorla (Fluent'e bildirilir) |
 | `--show-unit mm\|in\|auto` | ekranda/raporda gösterim birimi (varsayılan mm) |
 | `--keep-open` | bitince Fluent'i açık bırak |
+| `--simple` | basit mod: yüzey isimlendirme/gruplama hiç çalışmaz |
 | `--advisor` | bilinmeyen hatalarda Claude'a danış |
 | `--set bölüm.anahtar=değer` | herhangi bir ayarı geçersiz kıl |
 

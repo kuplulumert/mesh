@@ -38,9 +38,18 @@ FILE_TYPES = (
 )
 
 
+#: Arayüz çalışma biçimleri.
+MODES = ("simple", "advanced")
+
+
 @dataclass
 class GuiSettings:
     """Pencerede görünen her alanın karşılığı."""
+
+    #: "simple" -> yüzey isimlendirme/gruplama hiç devreye girmez, tek
+    #: düğmeyle uçtan uca mesh. "advanced" -> ölçüm, kademe ve yüzey
+    #: boyutu ekranlarıyla tam akış.
+    mode: str = "simple"
 
     geometry_path: str = ""
     output_dir: str = ""
@@ -110,6 +119,10 @@ class GuiSettings:
             return cls()
 
     # ------------------------------------------------------------------
+    @property
+    def is_simple(self) -> bool:
+        return (self.mode or "simple").lower() != "advanced"
+
     def validate(self) -> List[str]:
         """Çalıştırmadan önce kullanıcıya gösterilecek hatalar."""
         problems: List[str] = []
@@ -125,6 +138,8 @@ class GuiSettings:
             problems.append("Hücre sınırı en az 1000 olmalı.")
         if self.config_file and not os.path.isfile(self.config_file):
             problems.append("Konfigürasyon dosyası bulunamadı: {0}".format(self.config_file))
+        if (self.mode or "").lower() not in MODES:
+            problems.append("Bilinmeyen mod: {0!r}".format(self.mode))
         for label, value in (("Geometri birimi", self.length_unit),
                              ("Gösterim birimi", self.display_unit)):
             text = (value or "").strip().lower()
@@ -156,7 +171,13 @@ class GuiSettings:
             cfg.fluent.product_version = self.ansys_version.strip()
 
         cfg.geometry.open_in_spaceclaim = bool(self.open_in_spaceclaim)
-        cfg.local_sizing.enabled = bool(self.local_sizing_enabled)
+        # Basit modda yüzey gruplama/isimlendirme hiç çalışmaz: SpaceClaim
+        # dokümanına dokunulmaz, Fluent'e yalnızca global boyut gider.
+        simple = self.is_simple
+        cfg.local_sizing.enabled = (False if simple
+                                    else bool(self.local_sizing_enabled))
+        if simple:
+            cfg.geometry.open_in_spaceclaim = False
         if self.sizing_divisions:
             cfg.local_sizing.divisions = dict(self.sizing_divisions)
         if self.sizing_disabled:
@@ -234,14 +255,18 @@ class GuiSettings:
         if self.chosen_min_size > 0 and self.chosen_max_size > 0:
             parts += ["--min-size", "{0:.6g}".format(self.chosen_min_size),
                       "--max-size", "{0:.6g}".format(self.chosen_max_size)]
-        if self.open_in_spaceclaim:
-            parts.append("--open-cad")
-        if not self.local_sizing_enabled:
-            parts.append("--no-local-sizing")
-        for name, value in sorted(self.sizing_divisions.items()):
-            parts += ["--divisions", "{0}={1:g}".format(name, value)]
-        if self.local_floor > 0:
-            parts += ["--min-local-size", "{0:.6g}".format(self.local_floor)]
+        if self.is_simple:
+            parts.append("--simple")
+        else:
+            if self.open_in_spaceclaim:
+                parts.append("--open-cad")
+            if not self.local_sizing_enabled:
+                parts.append("--no-local-sizing")
+        if not self.is_simple:
+            for name, value in sorted(self.sizing_divisions.items()):
+                parts += ["--divisions", "{0}={1:g}".format(name, value)]
+            if self.local_floor > 0:
+                parts += ["--min-local-size", "{0:.6g}".format(self.local_floor)]
         if self.output_dir.strip():
             parts += ["--out", _quote(self.output_dir.strip())]
         return " ".join(parts)

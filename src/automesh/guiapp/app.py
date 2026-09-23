@@ -42,6 +42,10 @@ class AutoMeshApp:
         self.settings = GuiSettings.load()
         self.run: Optional[BackgroundRun] = None
         self.last_result = None
+        self._mode = self.settings.mode if self.settings.mode in ("simple",
+                                                                  "advanced") \
+            else "simple"
+        self._action_buttons: list = []
 
         root.title("AutoMesh {0} - Otonom Fluent Meshing".format(__version__))
         root.geometry("1040x760")
@@ -94,14 +98,117 @@ class AutoMeshApp:
         outer = ttk.Frame(self.root, padding=PAD)
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(4, weight=1)
+        outer.rowconfigure(1, weight=1)
 
-        self._build_files(outer, row=0)
-        self._build_options(outer, row=1)
-        self._build_buttons(outer, row=2)
-        self._build_choice_bar(outer, row=3)
-        self._build_log(outer, row=4)
-        self._build_status(outer, row=5)
+        # İki çalışma biçimi ayrı sekmelerde: basit yol her zaman elinizin
+        # altında dursun, gelişmiş akışın sorunları onu bloklamasın.
+        self.notebook = ttk.Notebook(outer)
+        self.notebook.grid(row=0, column=0, sticky="ew")
+
+        simple = ttk.Frame(self.notebook, padding=PAD)
+        advanced = ttk.Frame(self.notebook, padding=PAD)
+        self.notebook.add(simple, text="   Basit   ")
+        self.notebook.add(advanced, text="   Gelişmiş   ")
+        self._build_simple_tab(simple)
+        self._build_advanced_tab(advanced)
+
+        try:
+            self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+            if self._mode == "advanced":
+                self.notebook.select(1)
+        except Exception:      # pragma: no cover - widget yokluğuna dayanıklı
+            pass
+
+        self._build_log(outer, row=1)
+        self._build_status(outer, row=2)
+
+    # -- basit sekme -----------------------------------------------------
+    def _build_simple_tab(self, parent: ttk.Frame) -> None:
+        """Yüzey isimlendirmesi olmayan, tek düğmelik yol."""
+        parent.columnconfigure(0, weight=1)
+
+        ttk.Label(
+            parent,
+            text=("Geometriyi seçin ve 'Mesh oluştur'a basın. Boyutlar "
+                  "geometriden otomatik hesaplanır; SpaceClaim dokümanına "
+                  "dokunulmaz, yüzey grubu oluşturulmaz."),
+            foreground="#555", wraplength=900, justify="left").grid(
+            row=0, column=0, sticky="w", pady=(0, PAD))
+
+        files = ttk.LabelFrame(parent, text="Dosyalar", padding=PAD)
+        files.grid(row=1, column=0, sticky="ew")
+        files.columnconfigure(1, weight=1)
+
+        ttk.Label(files, text="Geometri").grid(row=0, column=0, sticky="w")
+        ttk.Entry(files, textvariable=self.var_geometry).grid(
+            row=0, column=1, sticky="ew", padx=PAD)
+        ttk.Button(files, text="Seç...", command=self._pick_geometry).grid(
+            row=0, column=2)
+
+        ttk.Label(files, text="Çıktı klasörü").grid(row=1, column=0, sticky="w",
+                                                    pady=(6, 0))
+        ttk.Entry(files, textvariable=self.var_output).grid(
+            row=1, column=1, sticky="ew", padx=PAD, pady=(6, 0))
+        ttk.Button(files, text="Seç...", command=self._pick_output).grid(
+            row=1, column=2, pady=(6, 0))
+
+        options = ttk.LabelFrame(parent, text="Ayarlar", padding=PAD)
+        options.grid(row=2, column=0, sticky="ew", pady=(PAD, 0))
+
+        ttk.Label(options, text="Fluent çekirdek").grid(row=0, column=0, sticky="w")
+        ttk.Spinbox(options, from_=1, to=256, textvariable=self.var_cores,
+                    width=8).grid(row=0, column=1, sticky="w", padx=(4, PAD * 2))
+
+        ttk.Label(options, text="Hücre sınırı").grid(row=0, column=2, sticky="w")
+        ttk.Spinbox(options, from_=10000, to=500_000_000, increment=1_000_000,
+                    textvariable=self.var_max_cells, width=12).grid(
+            row=0, column=3, sticky="w", padx=(4, PAD * 2))
+
+        ttk.Checkbutton(options, text="Fluent penceresini göster",
+                        variable=self.var_fluent_gui).grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ttk.Checkbutton(options, text="Prova (ANSYS açılmaz)",
+                        variable=self.var_dry_run).grid(
+            row=1, column=2, columnspan=2, sticky="w", pady=(6, 0))
+
+        bar = ttk.Frame(parent)
+        bar.grid(row=3, column=0, sticky="ew", pady=(PAD, 0))
+
+        self.btn_simple_analyze = ttk.Button(
+            bar, text="Geometriyi analiz et (hızlı bakış)",
+            command=lambda: self._guard("Geometri analizi",
+                                        lambda: self._start("analyze",
+                                                            mode="simple")))
+        self.btn_simple_analyze.pack(side="left")
+
+        self.btn_simple_run = ttk.Button(
+            bar, text="Mesh oluştur",
+            command=lambda: self._guard("Mesh oluşturma",
+                                        lambda: self._start("run",
+                                                            mode="simple")))
+        self.btn_simple_run.pack(side="left", padx=(PAD, 0))
+
+        self._action_buttons.extend([self.btn_simple_analyze, self.btn_simple_run])
+
+    # -- gelişmiş sekme --------------------------------------------------
+    def _build_advanced_tab(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        self._build_files(parent, row=0)
+        self._build_options(parent, row=1)
+        self._build_buttons(parent, row=2)
+        self._build_choice_bar(parent, row=3)
+
+    def _on_tab_changed(self, _event=None) -> None:
+        """Seçili sekme çalışma biçimini belirler."""
+        try:
+            index = int(self.notebook.index("current"))
+        except Exception:
+            return
+        self._mode = "advanced" if index == 1 else "simple"
+        self.var_status.set(
+            "Gelişmiş mod: ölçüm, kademe ve yüzey boyutu ekranları devrede."
+            if self._mode == "advanced"
+            else "Basit mod: yüzey isimlendirme yok, tek düğmeyle mesh.")
 
     # -- dosyalar --------------------------------------------------------
     def _build_files(self, parent: ttk.Frame, row: int) -> None:
@@ -266,6 +373,7 @@ class AutoMeshApp:
         self.btn_report = ttk.Button(bar, text="Raporu aç", command=self._open_report,
                                      state="disabled")
         self.btn_report.pack(side="right")
+        self._action_buttons.extend([self.btn_analyze, self.btn_plan, self.btn_run])
 
         self.btn_folder = ttk.Button(bar, text="Klasörü aç", command=self._open_folder,
                                      state="disabled")
@@ -389,6 +497,7 @@ class AutoMeshApp:
     def _collect(self) -> GuiSettings:
         previous = self.settings
         self.settings = GuiSettings(
+            mode=self._mode,
             geometry_path=self.var_geometry.get().strip(),
             output_dir=self.var_output.get().strip(),
             config_file=self.var_config.get().strip(),
@@ -424,7 +533,10 @@ class AutoMeshApp:
         )
         return self.settings
 
-    def _start(self, mode: str) -> None:
+    def _start(self, kind: str, mode: Optional[str] = None) -> None:
+        """``kind``: analyze | propose | plan | run.  ``mode``: simple | advanced."""
+        if mode in ("simple", "advanced"):
+            self._mode = mode
         if self.run is not None and self.run.running:
             messagebox.showinfo("AutoMesh", "Zaten çalışan bir iş var.")
             return
@@ -437,9 +549,13 @@ class AutoMeshApp:
 
         self._clear_log()
         label = {"analyze": "Geometri analizi", "plan": "Plan hesaplama",
-                 "propose": "Geometri analizi", "run": "Mesh oluşturma"}[mode]
+                 "propose": "Geometri analizi", "run": "Mesh oluşturma"}[kind]
         self._append("=== {0} başlıyor ===".format(label), "OK")
-        if mode == "run" and settings.dry_run:
+        if settings.is_simple and kind == "run":
+            self._append(
+                "Basit mod: yüzey isimlendirme yapılmaz, boyutlar geometriden "
+                "otomatik hesaplanır.", "INFO")
+        if kind == "run" and settings.dry_run:
             self._append(
                 "PROVA modu: Fluent açılmayacak, lisans harcanmayacak "
                 "(senaryo: {0}).".format(settings.scenario), "WARNING")
@@ -452,7 +568,7 @@ class AutoMeshApp:
         self._set_busy(True)
         self.var_status.set("{0} sürüyor...".format(label))
 
-        self.run = BackgroundRun(settings, mode)
+        self.run = BackgroundRun(settings, kind)
         self.run.start()
 
     def _stop(self) -> None:
@@ -462,7 +578,7 @@ class AutoMeshApp:
 
     def _set_busy(self, busy: bool) -> None:
         state = "disabled" if busy else "normal"
-        for button in (self.btn_analyze, self.btn_plan, self.btn_run):
+        for button in self._action_buttons:
             button.configure(state=state)
         self.btn_stop.configure(state="normal" if busy else "disabled")
         if busy:

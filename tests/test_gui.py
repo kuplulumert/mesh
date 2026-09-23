@@ -399,7 +399,7 @@ def test_default_closes_the_session(step_file, cfg, tmp_path):
 # --------------------------------------------------------------------------
 
 def test_sizing_decisions_reach_the_engine(step_file):
-    settings = GuiSettings(geometry_path=step_file,
+    settings = GuiSettings(geometry_path=step_file, mode="advanced",
                            sizing_divisions={"inlet": 24},
                            sizing_disabled=["automesh_width_0p03mm"],
                            local_floor=0.0002)
@@ -417,13 +417,14 @@ def test_local_sizing_can_be_turned_off_from_the_window(step_file):
 
 
 def test_sizing_decisions_appear_in_the_equivalent_command(step_file):
-    settings = GuiSettings(geometry_path=step_file,
+    settings = GuiSettings(geometry_path=step_file, mode="advanced",
                            sizing_divisions={"inlet": 24},
                            local_floor=0.0002)
     command = settings.equivalent_command()
     assert "--divisions inlet=24" in command
     assert "--min-local-size 0.0002" in command
-    off = GuiSettings(geometry_path=step_file, local_sizing_enabled=False)
+    off = GuiSettings(geometry_path=step_file, mode="advanced",
+                      local_sizing_enabled=False)
     assert "--no-local-sizing" in off.equivalent_command()
 
 
@@ -458,10 +459,58 @@ def test_sizing_choices_survive_a_save_and_load(tmp_path):
 
 
 def test_open_in_spaceclaim_choice_reaches_the_config(step_file):
-    cfg = GuiSettings(geometry_path=step_file,
-                      open_in_spaceclaim=True).to_config()
-    assert cfg.geometry.open_in_spaceclaim is True
-    assert "--open-cad" in GuiSettings(geometry_path=step_file,
-                                       open_in_spaceclaim=True).equivalent_command()
+    advanced = GuiSettings(geometry_path=step_file, mode="advanced",
+                           open_in_spaceclaim=True)
+    assert advanced.to_config().geometry.open_in_spaceclaim is True
+    assert "--open-cad" in advanced.equivalent_command()
     assert "--open-cad" not in GuiSettings(
-        geometry_path=step_file).equivalent_command()
+        geometry_path=step_file, mode="advanced").equivalent_command()
+
+
+# --------------------------------------------------------------------------
+# basit / gelişmiş mod
+# --------------------------------------------------------------------------
+
+def test_simple_is_the_default_mode():
+    """Çalışan sade yol varsayılan olmalı."""
+    assert GuiSettings().is_simple is True
+    assert GuiSettings(mode="advanced").is_simple is False
+
+
+def test_simple_mode_disables_face_naming(step_file):
+    """Basit modda SpaceClaim dokümanına dokunulmaz."""
+    settings = GuiSettings(geometry_path=step_file, mode="simple",
+                           local_sizing_enabled=True, open_in_spaceclaim=True,
+                           sizing_divisions={"inlet": 24})
+    cfg = settings.to_config()
+    assert cfg.local_sizing.enabled is False
+    assert cfg.geometry.open_in_spaceclaim is False
+
+
+def test_advanced_mode_keeps_face_naming(step_file):
+    cfg = GuiSettings(geometry_path=step_file, mode="advanced",
+                      local_sizing_enabled=True).to_config()
+    assert cfg.local_sizing.enabled is True
+
+
+def test_simple_mode_command_is_minimal(step_file):
+    settings = GuiSettings(geometry_path=step_file, mode="simple",
+                           sizing_divisions={"inlet": 24}, local_floor=1e-4,
+                           open_in_spaceclaim=True)
+    command = settings.equivalent_command()
+    assert "--simple" in command
+    # Gelişmiş moda ait hiçbir bayrak sızmamalı
+    assert "--divisions" not in command
+    assert "--min-local-size" not in command
+    assert "--open-cad" not in command
+
+
+def test_mode_survives_save_and_load(tmp_path):
+    path = str(tmp_path / "s.json")
+    GuiSettings(mode="advanced").save(path)
+    assert GuiSettings.load(path).mode == "advanced"
+
+
+def test_unknown_mode_is_rejected(step_file):
+    problems = GuiSettings(geometry_path=step_file, mode="yarim").validate()
+    assert any("Bilinmeyen mod" in p for p in problems)
