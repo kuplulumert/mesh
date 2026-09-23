@@ -396,8 +396,33 @@ kaydedilmezse Fluent'e ulaşmaz. Bu yüzden girdi zaten `.scdoc` olsa bile
 verilir. Kaynak CAD dosyanızın üzerine **asla yazılmaz** - ağ sürücüsünde,
 salt okunur ya da başkasının da kullandığı bir dosya olabilir.
 
-Grupları gözünüzle görmek isterseniz o dosyayı SpaceClaim'de açıp **Groups**
-panelinden bakabilirsiniz.
+### Grupları SpaceClaim'de görmek
+
+Adlandırma **SpaceClaim analizi sırasında** olur - yani `1. Geometriyi analiz
+et` ve `2. Ölçüm ve öneriler` düğmelerinde de, mesh'ten çok önce. Üç yerden
+görebilirsiniz:
+
+| Nerede | Nasıl |
+|---|---|
+| Arayüz günlüğü | Analiz biter bitmez `--- Yüzey grupları ---` bölümü akar |
+| Seçim ekranı | **Yüzey boyutlarını düzenle** düğmesi |
+| **SpaceClaim** | **SpaceClaim'de aç** düğmesi, ya da "Analiz sonrası SpaceClaim'de aç" kutusu |
+
+SpaceClaim açıldığında grupları sol taraftaki **Groups** panelinde
+görürsünüz; birine tıklayınca ait olduğu yüzeyler seçili gelir.
+
+```bat
+automesh analyze parca.scdoc --open-cad        :: analiz + SpaceClaim'de aç
+automesh run parca.scdoc --open-cad            :: meshlerken de açsın
+automesh analyze parca.scdoc --show-spaceclaim :: analiz koşusunu görünür yap
+```
+
+> Açılan SpaceClaim penceresi, siz kapatana kadar bir SpaceClaim lisansı
+> tutar. Analiz koşusunun kendisi headless'tır ve lisansı hemen bırakır;
+> bu ikinci pencere yalnızca incelemek içindir.
+>
+> `--show-spaceclaim` analiz koşusunu görünür yapar ama betik bitince pencere
+> kapanır (kısa bir göz atma). İncelemek için `--open-cad` daha uygundur.
 
 Örnek bir çalışmadan:
 

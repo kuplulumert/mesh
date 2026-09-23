@@ -79,6 +79,7 @@ class GuiSettings:
     sizing_divisions: Dict[str, float] = field(default_factory=dict)
     sizing_disabled: List[str] = field(default_factory=list)
     local_floor: float = 0.0           # m, hiçbir yerel boyut bundan ince olmasın
+    open_in_spaceclaim: bool = False   # analiz bitince SpaceClaim'de aç
 
     # ------------------------------------------------------------------
     def to_dict(self) -> Dict[str, Any]:
@@ -154,6 +155,7 @@ class GuiSettings:
         if self.ansys_version.strip():
             cfg.fluent.product_version = self.ansys_version.strip()
 
+        cfg.geometry.open_in_spaceclaim = bool(self.open_in_spaceclaim)
         cfg.local_sizing.enabled = bool(self.local_sizing_enabled)
         if self.sizing_divisions:
             cfg.local_sizing.divisions = dict(self.sizing_divisions)
@@ -232,6 +234,8 @@ class GuiSettings:
         if self.chosen_min_size > 0 and self.chosen_max_size > 0:
             parts += ["--min-size", "{0:.6g}".format(self.chosen_min_size),
                       "--max-size", "{0:.6g}".format(self.chosen_max_size)]
+        if self.open_in_spaceclaim:
+            parts.append("--open-cad")
         if not self.local_sizing_enabled:
             parts.append("--no-local-sizing")
         for name, value in sorted(self.sizing_divisions.items()):

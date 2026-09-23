@@ -141,7 +141,8 @@ class SpaceClaimAnalyzer(GeometryAnalyzer):
 
             cmd = [
                 self._exe,
-                "/Headless=True",
+                "/Headless={0}".format(
+                    "True" if cfg.geometry.spaceclaim_headless else "False"),
                 "/Splash=False",
                 "/Welcome=False",
                 "/ExitAfterScript=True",
@@ -189,11 +190,47 @@ class SpaceClaimAnalyzer(GeometryAnalyzer):
                     shutil.copy2(exported, final)
                 metrics.raw["exported_path"] = final
                 log.info("Gruplanmış geometri hazırlandı: %s", final)
-                log.info("Bu dosyayı SpaceClaim'de açıp Groups panelinden "
-                         "grupları görebilirsiniz.")
+                if cfg.geometry.open_in_spaceclaim:
+                    self.open_document(final, cfg)
+                else:
+                    log.info("Grupları görmek için: bu dosyayı SpaceClaim'de "
+                             "açıp Groups paneline bakın "
+                             "(ya da geometry.open_in_spaceclaim: true).")
             return metrics
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
+
+    # ------------------------------------------------------------------
+    def open_document(self, path: str, cfg: Optional[Config] = None) -> bool:
+        """Dosyayı SpaceClaim'de aç ve açık bırak (incelemek için).
+
+        Analiz koşusundan ayrı, bağımsız bir süreç başlatır: betik
+        çalıştırmaz, kapanmasını beklemez.  Pencereyi kullanıcı kapatana
+        kadar SpaceClaim lisansı tutulur.
+        """
+        log = get_logger()
+        self._probe(cfg)
+        if not self.available():
+            log.warning("SpaceClaim bulunamadı, dosya açılamadı: %s", path)
+            return False
+        if not os.path.isfile(path):
+            log.warning("Açılacak dosya yok: %s", path)
+            return False
+
+        kwargs = {}
+        if os.name == "nt":
+            # Ajan kapansa da pencere açık kalsın.
+            kwargs["creationflags"] = getattr(subprocess, "DETACHED_PROCESS", 0)
+        else:  # pragma: no cover - geliştirme ortamı
+            kwargs["start_new_session"] = True
+        try:
+            subprocess.Popen([self._exe, path], **kwargs)
+        except OSError as exc:
+            log.warning("SpaceClaim açılamadı: %s", exc)
+            return False
+        log.info("SpaceClaim açılıyor: %s", os.path.basename(path))
+        log.info("Grupları sol taraftaki 'Groups' panelinde göreceksiniz.")
+        return True
 
     # ------------------------------------------------------------------
     def _final_export_path(self, source: str, exported: str, cfg: Config) -> str:

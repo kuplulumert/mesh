@@ -83,6 +83,7 @@ class AutoMeshApp:
         self.var_choice = tk.StringVar(value=s.chosen_summary())
         self.var_sizing = tk.StringVar(value=s.sizing_summary())
         self.var_local_sizing = tk.BooleanVar(value=s.local_sizing_enabled)
+        self.var_open_cad = tk.BooleanVar(value=s.open_in_spaceclaim)
         self.var_dry_run.trace_add("write", lambda *_: self._on_dry_run_toggled())
 
     # ------------------------------------------------------------------
@@ -186,6 +187,9 @@ class AutoMeshApp:
         ttk.Checkbutton(mesh, text="Yüzey gruplarına özel boyut ver",
                         variable=self.var_local_sizing).grid(
             row=8, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        ttk.Checkbutton(mesh, text="Analiz sonrası SpaceClaim'de aç (grupları gör)",
+                        variable=self.var_open_cad).grid(
+            row=9, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
         flow = ttk.LabelFrame(wrapper, text="Akış bilgisi (opsiyonel - y+ için)",
                               padding=PAD)
@@ -274,9 +278,15 @@ class AutoMeshApp:
                    command=self._clear_choice).grid(row=0, column=1, sticky="e")
         ttk.Label(bar, textvariable=self.var_sizing,
                   foreground="#1b5e20").grid(row=1, column=0, sticky="w")
-        self.btn_sizing = ttk.Button(bar, text="Yüzey boyutlarını düzenle",
+        buttons = ttk.Frame(bar)
+        buttons.grid(row=1, column=1, sticky="e")
+        self.btn_open_cad = ttk.Button(buttons, text="SpaceClaim'de aç",
+                                       command=self._open_in_spaceclaim,
+                                       state="disabled")
+        self.btn_open_cad.pack(side="left", padx=(0, PAD))
+        self.btn_sizing = ttk.Button(buttons, text="Yüzey boyutlarını düzenle",
                                      command=self._edit_sizing, state="disabled")
-        self.btn_sizing.grid(row=1, column=1, sticky="e")
+        self.btn_sizing.pack(side="left")
 
     # -- günlük ----------------------------------------------------------
     def _build_log(self, parent: ttk.Frame, row: int) -> None:
@@ -369,6 +379,7 @@ class AutoMeshApp:
             chosen_max_size=previous.chosen_max_size,
             chosen_cells=previous.chosen_cells,
             local_sizing_enabled=bool(self.var_local_sizing.get()),
+            open_in_spaceclaim=bool(self.var_open_cad.get()),
             sizing_divisions=dict(previous.sizing_divisions),
             sizing_disabled=list(previous.sizing_disabled),
             local_floor=previous.local_floor,
@@ -433,6 +444,7 @@ class AutoMeshApp:
                     self._append(message.text, "ERROR")
                 elif message.kind == DONE:
                     self._finish(message.result)
+                    self._remember_prepared_file()
                     if self.run is not None and self.run.mode == "propose":
                         self._show_proposals()
         self.root.after(150, self._pump)
@@ -466,6 +478,30 @@ class AutoMeshApp:
     # ------------------------------------------------------------------
     # günlük penceresi
     # ------------------------------------------------------------------
+    def _remember_prepared_file(self) -> None:
+        """Analizin ürettiği gruplanmış dosyayı not et ve düğmeyi aç."""
+        metrics = None
+        if self.run is not None and getattr(self.run, "metrics", None) is not None:
+            metrics = self.run.metrics
+        elif self.last_result and self.last_result.geometry:
+            metrics = None
+            prepared = (self.last_result.geometry.get("raw") or {}).get(
+                "exported_path", "")
+            if prepared:
+                self._prepared_path = prepared
+                self.btn_open_cad.configure(state="normal")
+            return
+        if metrics is None:
+            return
+        self._last_metrics = metrics
+        prepared = (getattr(metrics, "raw", None) or {}).get("exported_path", "")
+        if prepared and os.path.isfile(prepared):
+            self._prepared_path = prepared
+            self.btn_open_cad.configure(state="normal")
+            self._append("Gruplanmış dosya: {0}".format(prepared), "INFO")
+        if getattr(metrics, "face_groups", None):
+            self.btn_sizing.configure(state="normal")
+
     def _show_proposals(self) -> None:
         """Ölçüm/öneri penceresini aç ve seçimi kaydet."""
         run = self.run
@@ -496,6 +532,28 @@ class AutoMeshApp:
         if getattr(run.metrics, "face_groups", None) and self.var_local_sizing.get():
             self._edit_sizing()
         self._append("Şimdi '3. Mesh oluştur' ile devam edebilirsiniz.", "INFO")
+
+    def _open_in_spaceclaim(self) -> None:
+        """Hazırlanan (gruplanmış) dosyayı SpaceClaim'de aç."""
+        path = getattr(self, "_prepared_path", "")
+        if not path or not os.path.isfile(path):
+            messagebox.showinfo(
+                "AutoMesh",
+                "Henüz hazırlanmış bir dosya yok.\n\n"
+                "Önce '1. Geometriyi analiz et' ya da '2. Ölçüm ve öneriler' "
+                "ile SpaceClaim analizini çalıştırın.")
+            return
+        from ..geometry.spaceclaim import SpaceClaimAnalyzer
+
+        cfg = self._collect().to_config()
+        if SpaceClaimAnalyzer().open_document(path, cfg):
+            self._append("SpaceClaim açılıyor: {0}".format(path), "OK")
+            self._append("Grupları sol taraftaki 'Groups' panelinde "
+                         "göreceksiniz.", "INFO")
+            self.var_status.set("SpaceClaim açılıyor...")
+        else:
+            messagebox.showwarning(
+                "AutoMesh", "SpaceClaim açılamadı. Kurulum yolunu kontrol edin.")
 
     def _edit_sizing(self) -> None:
         """Yüzey gruplarının bölme sayılarını seçtir."""

@@ -78,6 +78,13 @@ class GeometrySettings:
     spaceclaim_exe: Optional[str] = None       # full path to SpaceClaim.exe
     spaceclaim_script_api: str = "251"
     spaceclaim_timeout_s: int = 900
+    #: Analiz koşusu görünmez çalışsın mı. False -> pencere açılır, betik
+    #: çalışır ve kapanır (kısa bir göz atma; inceleme için aşağısı daha iyi).
+    spaceclaim_headless: bool = True
+    #: Analiz bitince hazırlanan dosyayı SpaceClaim'de aç ve açık bırak.
+    #: Grupları Groups panelinden görmek için. SpaceClaim lisansını siz
+    #: kapatana kadar tutar.
+    open_in_spaceclaim: bool = False
     #: SpaceClaim'in Fluent için yazacağı format.
     #: "auto" -> yüzey grupları açıksa .scdoc (grupları taşır), yoksa STEP.
     export_format: str = "auto"

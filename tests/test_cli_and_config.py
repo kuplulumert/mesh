@@ -225,3 +225,21 @@ def test_cli_can_disable_local_sizing(step_file, tmp_path, monkeypatch):
 
 def test_malformed_divisions_flag_is_rejected(step_file):
     assert main(["run", step_file, "--dry-run", "--divisions", "inlet"]) == 2
+
+
+def test_open_cad_flag_reaches_the_config(step_file, capsys):
+    from automesh.cli import _load_config, build_parser
+
+    args = build_parser().parse_args(["analyze", step_file, "--open-cad",
+                                      "--show-spaceclaim"])
+    cfg = _load_config(args)
+    assert cfg.geometry.open_in_spaceclaim is True
+    assert cfg.geometry.spaceclaim_headless is False
+
+
+def test_open_cad_defaults_to_off(step_file):
+    from automesh.cli import _load_config, build_parser
+
+    cfg = _load_config(build_parser().parse_args(["analyze", step_file]))
+    assert cfg.geometry.open_in_spaceclaim is False
+    assert cfg.geometry.spaceclaim_headless is True

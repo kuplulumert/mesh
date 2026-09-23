@@ -21,6 +21,8 @@ geometry:
   spaceclaim_exe: null       # "C:/Program Files/ANSYS Inc/v251/scdm/SpaceClaim.exe"
   spaceclaim_script_api: "251"
   spaceclaim_timeout_s: 900
+  spaceclaim_headless: true  # false -> analiz penceresi görünür (betik bitince kapanır)
+  open_in_spaceclaim: false  # true -> analiz sonrası hazırlanan dosyayı açık bırakır
   export_format: auto        # auto -> gruplar varsa .scdoc, yoksa step
   length_unit: null          # null -> dosyadan tespit edilir
 

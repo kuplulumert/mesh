@@ -455,3 +455,13 @@ def test_sizing_choices_survive_a_save_and_load(tmp_path):
     assert loaded.sizing_divisions == {"inlet": 24}
     assert loaded.sizing_disabled == ["x"]
     assert loaded.local_floor == pytest.approx(2e-4)
+
+
+def test_open_in_spaceclaim_choice_reaches_the_config(step_file):
+    cfg = GuiSettings(geometry_path=step_file,
+                      open_in_spaceclaim=True).to_config()
+    assert cfg.geometry.open_in_spaceclaim is True
+    assert "--open-cad" in GuiSettings(geometry_path=step_file,
+                                       open_in_spaceclaim=True).equivalent_command()
+    assert "--open-cad" not in GuiSettings(
+        geometry_path=step_file).equivalent_command()

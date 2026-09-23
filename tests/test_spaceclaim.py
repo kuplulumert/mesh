@@ -93,3 +93,64 @@ def test_raw_json_maps_onto_metrics():
     assert metrics.raw["exported_path"] == "C:/tmp/part.stp"
     # Round-trips through JSON for the run report.
     assert json.loads(json.dumps(metrics.to_dict()))["body_count"] == 2
+
+
+# --------------------------------------------------------------------------
+# dosyayı SpaceClaim'de açma
+# --------------------------------------------------------------------------
+
+def test_open_document_launches_a_detached_process(tmp_path, monkeypatch):
+    """Analiz koşusundan ayrı, beklenmeyen bir süreç başlatılmalı.
+
+    Beklenseydi ajan, kullanıcı SpaceClaim'i kapatana kadar donardı.
+    """
+    import subprocess
+
+    from automesh.config import Config
+
+    exe = tmp_path / "SpaceClaim.exe"
+    exe.write_text("")
+    document = tmp_path / "part_automesh.scdoc"
+    document.write_text("")
+
+    launched = {}
+
+    def fake_popen(cmd, **kwargs):
+        launched["cmd"] = cmd
+        launched["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    analyzer = SpaceClaimAnalyzer(exe=str(exe), script_api="252")
+    assert analyzer.open_document(str(document), Config()) is True
+    assert launched["cmd"] == [str(exe), str(document)]
+    # Betik çalıştırılmamalı, kapanma zorlanmamalı
+    assert not any("RunScript" in str(part) for part in launched["cmd"])
+    assert not any("ExitAfterScript" in str(part) for part in launched["cmd"])
+
+
+def test_open_document_is_quiet_when_there_is_nothing_to_open(tmp_path):
+    from automesh.config import Config
+
+    exe = tmp_path / "SpaceClaim.exe"
+    exe.write_text("")
+    analyzer = SpaceClaimAnalyzer(exe=str(exe), script_api="252")
+    assert analyzer.open_document(str(tmp_path / "yok.scdoc"), Config()) is False
+
+
+def test_open_document_without_an_installation(tmp_path):
+    from automesh.config import Config
+
+    document = tmp_path / "part.scdoc"
+    document.write_text("")
+    assert SpaceClaimAnalyzer().open_document(str(document), Config()) is False
+
+
+def test_headless_flag_follows_the_config():
+    from automesh.config import Config
+
+    cfg = Config()
+    assert cfg.geometry.spaceclaim_headless is True
+    assert cfg.geometry.open_in_spaceclaim is False
+    cfg.geometry.spaceclaim_headless = False
+    assert cfg.geometry.spaceclaim_headless is False

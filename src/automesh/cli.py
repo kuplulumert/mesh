@@ -46,6 +46,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Tek bir ayarı geçersiz kıl (birden çok kez verilebilir)")
     common.add_argument("--log-level", default="info",
                         choices=("debug", "info", "warning", "error"))
+    common.add_argument("--open-cad", action="store_true",
+                        help="Analiz bitince hazırlanan dosyayı SpaceClaim'de "
+                             "aç (grupları Groups panelinden görmek için)")
+    common.add_argument("--show-spaceclaim", action="store_true",
+                        help="Analiz koşusunu görünür çalıştır (pencere açılır "
+                             "ve betik bitince kapanır)")
 
     # ---- run -----------------------------------------------------------
     run = sub.add_parser("run", parents=[common],
@@ -155,6 +161,10 @@ def _load_config(args: argparse.Namespace) -> Config:
     path = getattr(args, "config", None) or default_config_path()
     cfg = Config.load(path)
     apply_overrides(cfg, getattr(args, "overrides", []) or [])
+    if getattr(args, "open_cad", False):
+        cfg.geometry.open_in_spaceclaim = True
+    if getattr(args, "show_spaceclaim", False):
+        cfg.geometry.spaceclaim_headless = False
     return cfg
 
 
