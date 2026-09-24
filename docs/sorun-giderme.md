@@ -171,6 +171,29 @@ analiz Fluent'e hiç dokunmaz, mesh dokunur.
    ayarı yapmanıza gerek kalmaz.
 3. Fluent'e hiç dokunmadan akışı denemek için **Prova** kutusunu işaretleyin.
 
+## Temizlik taraması
+
+**Hiç bulgu yok ama modelde küçük filetolar var**
+Günlükteki `Yüz tipleri` satırına bakın. Filetolar `NurbsSurface` olarak
+geliyorsa (bazı STEP dönüşümlerinde olur) yarıçap okunamaz; tarama yalnızca
+silindir/torus/küre yüzlerini fileto sayar. Eşikleri de kontrol edin: otomatik
+eşik küçük parçada parça boyutuyla küçülür.
+
+**Fileto zincirleri tek tek yüz olarak çıkıyor, çıkıntı hiç bulunmuyor**
+Günlükte `Komşuluk: yok` yazıyorsa SpaceClaim sürümünüzde kenar-yüz ilişkisi
+okunamadı. Fileto ve vida taraması yine çalışır, çıkıntı taraması komşuluk
+ister. Günlüğü atarsanız okuma yolunu sürümünüze göre ekleriz.
+
+**Bir vida deliği işaretlenmedi**
+Delik sizin named selection'larınızdan birine ait bir yüze dokunuyorsa bilerek
+atlanır; günlükte "İşaretlenmeyenler" altında yazar. Ya da çapı eşiğin
+üstündedir: `--vida 16` gibi büyütün.
+
+**Delete'e bastım, SpaceClaim boşluğu kapatamadı**
+Bazı detaylarda (özellikle birden çok yüze yayılan çıkıntılarda) komşu yüzler
+uzatılarak kapanmayabilir. O detayı atlayın ya da SpaceClaim'in Fill aracıyla
+elle kapatın; tarama hiçbir şeyi kendisi silmediği için model bozulmaz.
+
 ## Arayüz açılmıyor
 
 **`Arayüz için Tkinter gerekli ama bulunamadı`**

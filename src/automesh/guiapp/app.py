@@ -114,6 +114,18 @@ class AutoMeshApp:
         self.var_sizing = tk.StringVar(value=s.sizing_summary())
         self.var_local_sizing = tk.BooleanVar(value=s.local_sizing_enabled)
         self.var_open_cad = tk.BooleanVar(value=s.open_in_spaceclaim)
+        # temizlik sekmesi
+        self.var_clean_fillet = tk.StringVar(value=s.cleanup_fillet_mm)
+        self.var_clean_hole = tk.StringVar(value=s.cleanup_hole_mm)
+        self.var_clean_bump = tk.StringVar(value=s.cleanup_protrusion_mm)
+        self.var_clean_fillets = tk.BooleanVar(value=s.cleanup_fillets)
+        self.var_clean_screws = tk.BooleanVar(value=s.cleanup_screws)
+        self.var_clean_bumps = tk.BooleanVar(value=s.cleanup_protrusions)
+        self.var_clean_open = tk.BooleanVar(value=s.cleanup_open_spaceclaim)
+        self.var_clean_summary = tk.StringVar(
+            value=("Son işaretli kopya: {0}".format(s.last_cleaned_path)
+                   if s.last_cleaned_path else
+                   "Henüz tarama yapılmadı."))
         self.var_dry_run.trace_add("write", lambda *_: self._on_dry_run_toggled())
 
     # ------------------------------------------------------------------
@@ -132,10 +144,13 @@ class AutoMeshApp:
 
         simple = ttk.Frame(self.notebook, padding=PAD)
         advanced = ttk.Frame(self.notebook, padding=PAD)
+        cleaning = ttk.Frame(self.notebook, padding=PAD)
         self.notebook.add(simple, text="   Basit   ")
         self.notebook.add(advanced, text="   Gelişmiş   ")
+        self.notebook.add(cleaning, text="   Temizlik   ")
         self._build_simple_tab(simple)
         self._build_advanced_tab(advanced)
+        self._build_cleanup_tab(cleaning)
 
         try:
             self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
@@ -232,6 +247,138 @@ class AutoMeshApp:
         ttk.Button(choice, text="Seçimi temizle",
                    command=self._clear_choice).grid(row=0, column=2, sticky="e")
 
+    # -- temizlik sekmesi ------------------------------------------------
+    def _build_cleanup_tab(self, parent: ttk.Frame) -> None:
+        """Küçük detayları bul, SpaceClaim'de grup olarak işaretle."""
+        parent.columnconfigure(0, weight=1)
+
+        ttk.Label(
+            parent,
+            text=("Hazır akış hacmini tarar; küçük fileto/round'ları, vida "
+                  "noktalarını ve akışa etkisi olmayan küçük çıkıntıları bulur. "
+                  "Hiçbir şey SİLMEZ: her bulgu SpaceClaim'de bir temizle_* "
+                  "grubu olur. Groups panelinde gruba tıklayıp Delete'e "
+                  "basarak siz silersiniz."),
+            foreground="#555", wraplength=900, justify="left").grid(
+            row=0, column=0, sticky="w", pady=(0, PAD))
+
+        files = ttk.LabelFrame(parent, text="Geometri", padding=PAD)
+        files.grid(row=1, column=0, sticky="ew")
+        files.columnconfigure(1, weight=1)
+        ttk.Label(files, text="Akış hacmi").grid(row=0, column=0, sticky="w")
+        ttk.Entry(files, textvariable=self.var_geometry).grid(
+            row=0, column=1, sticky="ew", padx=PAD)
+        ttk.Button(files, text="Seç...", command=self._pick_geometry).grid(
+            row=0, column=2)
+
+        search = ttk.LabelFrame(parent, text="Ne aransın (boş = otomatik)",
+                                padding=PAD)
+        search.grid(row=2, column=0, sticky="ew", pady=(PAD, 0))
+        rows = (
+            (self.var_clean_fillets, "Küçük fileto / round", "yarıçap ≤",
+             self.var_clean_fillet, "otomatik: 2 mm (küçük parçada daha az)"),
+            (self.var_clean_screws, "Vida noktası / küçük delik", "çap ≤",
+             self.var_clean_hole, "otomatik: 12 mm - pah ve dip fileto dahil"),
+            (self.var_clean_bumps, "Küçük çıkıntı / cep", "boyut ≤",
+             self.var_clean_bump, "otomatik: 10 mm - kaburga, tırnak, yazı"),
+        )
+        for row, (flag, title, measure, value, hint) in enumerate(rows):
+            ttk.Checkbutton(search, text=title, variable=flag).grid(
+                row=row, column=0, sticky="w", pady=2)
+            ttk.Label(search, text=measure).grid(row=row, column=1, sticky="e",
+                                                 padx=(PAD * 2, 4))
+            ttk.Entry(search, textvariable=value, width=8).grid(
+                row=row, column=2, sticky="w")
+            ttk.Label(search, text="mm").grid(row=row, column=3, sticky="w",
+                                              padx=(4, PAD * 2))
+            ttk.Label(search, text=hint, foreground="#777").grid(
+                row=row, column=4, sticky="w")
+        ttk.Checkbutton(search, text="Bitince işaretli kopyayı SpaceClaim'de aç",
+                        variable=self.var_clean_open).grid(
+            row=len(rows), column=0, columnspan=5, sticky="w", pady=(6, 0))
+
+        bar = ttk.Frame(parent)
+        bar.grid(row=3, column=0, sticky="ew", pady=(PAD, 0))
+        self.btn_clean_scan = ttk.Button(
+            bar, text="1. Tara ve SpaceClaim'de işaretle",
+            command=lambda: self._guard("Temizlik taraması",
+                                        lambda: self._start("cleanup")))
+        self.btn_clean_scan.pack(side="left")
+        self.btn_clean_open = ttk.Button(
+            bar, text="2. SpaceClaim'de aç",
+            command=lambda: self._guard("SpaceClaim'de açma", self._open_cleaned),
+            state="normal" if self.settings.last_cleaned_path else "disabled")
+        self.btn_clean_open.pack(side="left", padx=(PAD, 0))
+        self.btn_clean_use = ttk.Button(
+            bar, text="3. Temizlenmiş dosyayla mesh'e geç",
+            command=lambda: self._guard("Temizlenmiş dosya", self._use_cleaned),
+            state="normal" if self.settings.last_cleaned_path else "disabled")
+        self.btn_clean_use.pack(side="left", padx=(PAD, 0))
+        self._action_buttons.append(self.btn_clean_scan)
+
+        ttk.Label(parent, textvariable=self.var_clean_summary,
+                  foreground="#1b5e20", wraplength=900, justify="left").grid(
+            row=4, column=0, sticky="w", pady=(PAD, 0))
+
+    def _cleanup_done(self) -> None:
+        """Tarama bitti: özeti göster, düğmeleri aç."""
+        report = getattr(self.run, "cleanup_report", None) if self.run else None
+        if report is None:
+            return
+        counts = ", ".join("{0} {1}".format(report.summary.get(key, 0), name)
+                           for key, name in (("fileto", "fileto"),
+                                             ("vida", "vida noktası"),
+                                             ("cikinti", "çıkıntı")))
+        if report.saved_path:
+            self.settings.last_cleaned_path = report.saved_path
+            self.settings.save()
+            self.btn_clean_open.configure(state="normal")
+            self.btn_clean_use.configure(state="normal")
+            self.var_clean_summary.set(
+                "Son tarama: {0}\nİşaretli kopya: {1}".format(
+                    counts, report.saved_path))
+        else:
+            self.var_clean_summary.set(
+                "Son tarama: {0} (kopya kaydedilemedi - günlüğe bakın)".format(
+                    counts))
+        self.var_status.set("Temizlik taraması bitti: {0}".format(counts))
+
+    def _open_cleaned(self) -> None:
+        """İşaretli kopyayı SpaceClaim'de aç (grupları görmek/silmek için)."""
+        path = self.settings.last_cleaned_path
+        if not path or not os.path.isfile(path):
+            messagebox.showinfo("AutoMesh",
+                                "Önce '1. Tara ve SpaceClaim'de işaretle'.")
+            return
+        from ..geometry.spaceclaim import SpaceClaimAnalyzer
+
+        if SpaceClaimAnalyzer().open_document(path, self.settings.to_config()):
+            self.var_status.set("SpaceClaim açılıyor: {0}".format(
+                os.path.basename(path)))
+        else:
+            messagebox.showwarning("AutoMesh", "SpaceClaim açılamadı:\n{0}".format(
+                path))
+
+    def _use_cleaned(self) -> None:
+        """Temizlenmiş kopyayı geometri yap ve Basit sekmeye geç."""
+        path = self.settings.last_cleaned_path
+        if not path or not os.path.isfile(path):
+            messagebox.showinfo("AutoMesh",
+                                "Önce '1. Tara ve SpaceClaim'de işaretle'.")
+            return
+        self.var_geometry.set(path)
+        self._mode = "simple"
+        try:
+            self.notebook.select(0)
+        except Exception:      # pragma: no cover - widget yokluğuna dayanıklı
+            pass
+        self._append("", "INFO")
+        self._append("Geometri: {0}".format(path), "OK")
+        self._append("SpaceClaim'deki silmeleri Ctrl+S ile kaydettiğinizden emin "
+                     "olun; kaydedilmeyen değişiklik mesh'e yansımaz.", "WARNING")
+        self.var_status.set("Temizlenmiş geometri seçildi - 'Mesh oluştur' ile "
+                            "devam edebilirsiniz.")
+
     # -- gelişmiş sekme --------------------------------------------------
     def _build_advanced_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -245,6 +392,13 @@ class AutoMeshApp:
         try:
             index = int(self.notebook.index("current"))
         except Exception:
+            return
+        if index == 2:
+            # Temizlik bir mesh modu değil: seçili mod (basit/gelişmiş) aynen
+            # kalır, mesh'e dönüldüğünde oradan devam edilir.
+            self.var_status.set(
+                "Temizlik: küçük fileto, vida noktası ve çıkıntılar bulunur, "
+                "SpaceClaim'de grup olarak işaretlenir - hiçbir şey silinmez.")
             return
         self._mode = "advanced" if index == 1 else "simple"
         self.var_status.set(
@@ -572,6 +726,14 @@ class AutoMeshApp:
             sizing_divisions=dict(previous.sizing_divisions),
             sizing_disabled=list(previous.sizing_disabled),
             local_floor=previous.local_floor,
+            cleanup_fillet_mm=self.var_clean_fillet.get().strip(),
+            cleanup_hole_mm=self.var_clean_hole.get().strip(),
+            cleanup_protrusion_mm=self.var_clean_bump.get().strip(),
+            cleanup_fillets=bool(self.var_clean_fillets.get()),
+            cleanup_screws=bool(self.var_clean_screws.get()),
+            cleanup_protrusions=bool(self.var_clean_bumps.get()),
+            cleanup_open_spaceclaim=bool(self.var_clean_open.get()),
+            last_cleaned_path=previous.last_cleaned_path,
         )
         return self.settings
 
@@ -583,7 +745,8 @@ class AutoMeshApp:
             messagebox.showinfo("AutoMesh", "Zaten çalışan bir iş var.")
             return
         settings = self._collect()
-        problems = settings.validate()
+        problems = (settings.validate_cleanup() if kind == "cleanup"
+                    else settings.validate())
         if problems:
             messagebox.showerror("Eksik veya hatalı bilgi", "\n".join(problems))
             return
@@ -595,7 +758,8 @@ class AutoMeshApp:
 
         self._clear_log()
         label = {"analyze": "Geometri analizi", "plan": "Plan hesaplama",
-                 "propose": "Geometri analizi", "run": "Mesh oluşturma"}[kind]
+                 "propose": "Geometri analizi", "run": "Mesh oluşturma",
+                 "cleanup": "Temizlik taraması"}[kind]
         self._append("=== {0} başlıyor ===".format(label), "OK")
         if settings.is_simple and kind == "run":
             self._append(
@@ -605,7 +769,14 @@ class AutoMeshApp:
             self._append(
                 "PROVA modu: Fluent açılmayacak, lisans harcanmayacak "
                 "(senaryo: {0}).".format(settings.scenario), "WARNING")
-        self._append("Eşdeğer komut:  {0}".format(settings.equivalent_command()), "INFO")
+        if kind == "cleanup":
+            self._append("Hiçbir şey silinmez: bulunan detaylar SpaceClaim'de "
+                         "temizle_* grubu olarak işaretlenir, kaynak dosyaya "
+                         "dokunulmaz.", "INFO")
+            command = settings.cleanup_command()
+        else:
+            command = settings.equivalent_command()
+        self._append("Eşdeğer komut:  {0}".format(command), "INFO")
         self._append("", "INFO")
 
         self.last_result = None
@@ -688,6 +859,8 @@ class AutoMeshApp:
                         self._remember_prepared_file()
                         if self.run is not None and self.run.mode == "propose":
                             self._show_proposals()
+                        if self.run is not None and self.run.mode == "cleanup":
+                            self._cleanup_done()
         except Exception:
             for line in traceback.format_exc().strip().splitlines():
                 self._append("  " + line, "ERROR")

@@ -236,6 +236,32 @@ class OutputSettings:
 
 
 @dataclass
+class CleanupSettings:
+    """SpaceClaim temizlik taraması.
+
+    Tarama HİÇBİR ŞEYİ SİLMEZ: bulduğu her detay için SpaceClaim'de bir
+    ``temizle_*`` grubu oluşturur, silme kararı kullanıcınındır.
+    Eşikler metre cinsindendir; 0 -> geometri boyutundan otomatik.
+    """
+
+    #: Bu yarıçapın altındaki fileto/round'lar.
+    fillet_max_radius: float = 0.0
+    #: Bu çapın altındaki tam silindirik detaylar (vida deliği/kulesi, pim).
+    hole_max_diameter: float = 0.0
+    #: Toplam boyutu bunun altında kalan küçük çıkıntı/cepler.
+    protrusion_max_size: float = 0.0
+    #: Aranacak kategoriler: fileto, vida, cikinti.
+    categories: List[str] = field(
+        default_factory=lambda: ["fileto", "vida", "cikinti"])
+    #: Bir kategoride en fazla kaç ayrı grup (fazlası yalnızca HEPSI'nde).
+    max_groups_per_category: int = 80
+    #: Tarama bitince işaretli kopyayı SpaceClaim'de aç.
+    open_in_spaceclaim: bool = True
+    #: İşaretli kopyanın adına eklenen son ek.
+    output_suffix: str = "_temizlik"
+
+
+@dataclass
 class Config:
     fluent: FluentSettings = field(default_factory=FluentSettings)
     geometry: GeometrySettings = field(default_factory=GeometrySettings)
@@ -245,6 +271,7 @@ class Config:
     autonomy: AutonomySettings = field(default_factory=AutonomySettings)
     advisor: AdvisorSettings = field(default_factory=AdvisorSettings)
     output: OutputSettings = field(default_factory=OutputSettings)
+    cleanup: CleanupSettings = field(default_factory=CleanupSettings)
 
     # ------------------------------------------------------------------
     def to_dict(self) -> Dict[str, Any]:

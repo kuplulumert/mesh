@@ -555,3 +555,48 @@ def test_gui_failure_is_written_where_a_windowless_start_can_show_it(
 
     assert guiapp.main() == 1
     assert "bilerek patlatıldı" in crash.read_text(encoding="utf-8")
+
+
+# -- temizlik ayarları --------------------------------------------------------
+
+def test_cleanup_thresholds_are_millimetres():
+    settings = GuiSettings(cleanup_fillet_mm="1,5", cleanup_hole_mm="",
+                           cleanup_protrusion_mm="8")
+    cfg = settings.to_config()
+    assert cfg.cleanup.fillet_max_radius == pytest.approx(0.0015)
+    assert cfg.cleanup.hole_max_diameter == 0.0            # otomatik
+    assert cfg.cleanup.protrusion_max_size == pytest.approx(0.008)
+
+
+def test_cleanup_categories_follow_the_checkboxes():
+    settings = GuiSettings(cleanup_screws=False)
+    assert settings.cleanup_categories() == ["fileto", "cikinti"]
+    assert settings.to_config().cleanup.categories == ["fileto", "cikinti"]
+
+
+def test_cleanup_command_mirrors_the_cli(tmp_path):
+    settings = GuiSettings(geometry_path="M:/CAD/parca.scdoc",
+                           cleanup_fillet_mm="1,5", cleanup_protrusions=False,
+                           cleanup_open_spaceclaim=False)
+    command = settings.cleanup_command()
+    assert command.startswith("automesh temizle M:/CAD/parca.scdoc")
+    assert "--fileto 1.5" in command
+    assert "--kategoriler fileto,vida" in command
+    assert "--acma" in command
+
+
+def test_cleanup_validation_rejects_mesh_files(tmp_path):
+    stl = tmp_path / "x.stl"
+    stl.write_text("solid", encoding="utf-8")
+    problems = GuiSettings(geometry_path=str(stl)).validate_cleanup()
+    assert any("CAD" in p for p in problems)
+
+
+def test_cleanup_settings_survive_a_restart(tmp_path):
+    path = str(tmp_path / "gui.json")
+    GuiSettings(cleanup_hole_mm="8", cleanup_fillets=False,
+                last_cleaned_path="C:/runs/x_temizlik.scdoc").save(path)
+    loaded = GuiSettings.load(path)
+    assert loaded.cleanup_hole_mm == "8"
+    assert loaded.cleanup_fillets is False
+    assert loaded.last_cleaned_path == "C:/runs/x_temizlik.scdoc"

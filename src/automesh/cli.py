@@ -132,6 +132,25 @@ def build_parser() -> argparse.ArgumentParser:
                          metavar="GRUP=N",
                          help="Bir grubun bölme sayısını deneyerek gör")
 
+    # ---- temizle ---------------------------------------------------------
+    clean = sub.add_parser(
+        "temizle", parents=[common],
+        help="SpaceClaim'de küçük fileto, vida noktası ve çıkıntıları bulup "
+             "grup olarak işaretle (hiçbir şey silinmez)")
+    clean.add_argument("geometry", help="Hazır akış hacmi (.scdoc)")
+    clean.add_argument("-o", "--out",
+                       help="İşaretli kopyanın klasörü (varsayılan: runs/...)")
+    clean.add_argument("--fileto", metavar="MM",
+                       help="Bu yarıçapın altındaki filetolar (mm), örn. 1.5")
+    clean.add_argument("--vida", metavar="MM",
+                       help="Bu çapın altındaki vida/delik detayları (mm)")
+    clean.add_argument("--cikinti", metavar="MM",
+                       help="Bu boyutun altındaki çıkıntı/cepler (mm)")
+    clean.add_argument("--kategoriler", metavar="LISTE",
+                       help="Aranacaklar, virgülle: fileto,vida,cikinti")
+    clean.add_argument("--acma", action="store_true",
+                       help="Bitince SpaceClaim'de açma")
+
     # ---- diagnose --------------------------------------------------------
     diagnose = sub.add_parser("diagnose", parents=[common],
                               help="Bir Fluent çıktısını kural tabanıyla teşhis et")
@@ -383,6 +402,53 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_mm(text: str) -> float:
+    """Temizlik eşikleri: birimsiz sayı mm'dir ('1.5' -> 0.0015 m)."""
+    raw = (text or "").strip().lower().replace(",", ".")
+    if not raw:
+        return 0.0
+    if raw[-1].isalpha():
+        return parse_length(raw)
+    return float(raw) * 0.001
+
+
+def cmd_temizle(args: argparse.Namespace) -> int:
+    """Temizlik taraması: bul, SpaceClaim'de grup olarak işaretle."""
+    from .geometry.cleanup import CATEGORIES, run_cleanup_scan
+
+    cfg = _load_config(args)
+    settings = cfg.cleanup
+    for attribute, value in (("fillet_max_radius", args.fileto),
+                             ("hole_max_diameter", args.vida),
+                             ("protrusion_max_size", args.cikinti)):
+        if value:
+            setattr(settings, attribute, _parse_mm(value))
+    if args.kategoriler:
+        wanted = [c.strip().lower() for c in args.kategoriler.split(",") if c.strip()]
+        unknown = [c for c in wanted if c not in CATEGORIES]
+        if unknown:
+            raise ValueError("Bilinmeyen kategori: {0} (geçerli: {1})".format(
+                ", ".join(unknown), ", ".join(CATEGORIES)))
+        settings.categories = wanted
+    if args.acma:
+        settings.open_in_spaceclaim = False
+
+    from .geometry.base import GeometryAnalyzerError
+
+    try:
+        report = run_cleanup_scan(args.geometry, cfg, args.out)
+    except GeometryAnalyzerError as exc:
+        print("Hata: {0}".format(exc), file=sys.stderr)
+        return 2
+    print()
+    print("Toplam {0} detay işaretlendi: {1}".format(
+        report.total, ", ".join("{0} {1}".format(report.summary.get(c, 0), c)
+                                for c in CATEGORIES)))
+    if report.saved_path:
+        print("İşaretli kopya: {0}".format(report.saved_path))
+    return 0
+
+
 def cmd_gui(args: argparse.Namespace) -> int:
     from .guiapp import main as gui_main
 
@@ -556,6 +622,7 @@ COMMANDS = {
     "run": cmd_run,
     "gui": cmd_gui,
     "kisayol": cmd_kisayol,
+    "temizle": cmd_temizle,
     "doctor": cmd_doctor,
     "propose": cmd_propose,
     "analyze": cmd_analyze,

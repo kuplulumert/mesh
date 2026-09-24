@@ -26,7 +26,7 @@ LOG = "log"
 DONE = "done"
 ERROR = "error"
 
-MODES = ("run", "analyze", "plan", "propose")
+MODES = ("run", "analyze", "plan", "propose", "cleanup")
 
 
 @dataclass
@@ -67,6 +67,8 @@ class BackgroundRun:
         #: "propose" modunda doldurulur: (metrics, proposals)
         self.proposals: Any = None
         self.metrics: Any = None
+        #: "cleanup" modunda doldurulur: CleanupReport
+        self.cleanup_report: Any = None
         self.error: str = ""
         self._thread: Optional[threading.Thread] = None
         self._handler: Optional[_QueueHandler] = None
@@ -113,6 +115,8 @@ class BackgroundRun:
                 self._do_run()
             elif self.mode == "propose":
                 self._do_propose()
+            elif self.mode == "cleanup":
+                self._do_cleanup()
             else:
                 self._do_inspect()
         except Exception:
@@ -130,6 +134,14 @@ class BackgroundRun:
         self.result = run_agent(
             self.settings.geometry_path, cfg,
             self.settings.run_directory(), self.cancel_event)
+
+    def _do_cleanup(self) -> None:
+        """SpaceClaim temizlik taraması: bul ve grup olarak işaretle."""
+        from ..geometry.cleanup import run_cleanup_scan
+
+        cfg = self.settings.to_config()
+        self.cleanup_report = run_cleanup_scan(
+            self.settings.geometry_path, cfg, self.settings.run_directory())
 
     def _do_propose(self) -> None:
         """Ölçümleri al ve seçilebilir kademeleri üret (Fluent açılmaz)."""

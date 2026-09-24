@@ -470,3 +470,135 @@ def test_startup_logs_which_python_and_whether_pyfluent_is_there(
     assert "Python :" in logged
     assert "PyFluent: BULUNAMADI" in logged
     assert "--add-path" in logged
+
+
+# --------------------------------------------------------------------------
+# temizlik sekmesi
+# --------------------------------------------------------------------------
+
+def _cleanup_report(saved_path):
+    from automesh.geometry.cleanup import report_from_raw
+
+    return report_from_raw({
+        "ok": True, "saved_path": saved_path,
+        "summary": {"fileto": 5, "vida": 2, "cikinti": 1},
+        "features": [], "thresholds": {}})
+
+
+def test_cleanup_tab_builds_and_locks_while_busy(fake_tk, tmp_path, monkeypatch):
+    module, _ = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    assert app.btn_clean_scan in app._action_buttons
+
+
+def test_cleanup_tab_does_not_change_the_mesh_mode(fake_tk, tmp_path,
+                                                   monkeypatch):
+    """Temizlik bir mesh modu değil; basit/gelişmiş seçimi korunur."""
+    module, _ = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    app._mode = "advanced"
+    app.notebook.index = lambda _what: 2
+    app._on_tab_changed()
+    assert app._mode == "advanced"
+    assert "hiçbir şey silinmez" in app.var_status.get()
+
+
+def test_cleanup_scan_runs_and_offers_the_marked_copy(fake_tk, tmp_path,
+                                                      monkeypatch, step_file):
+    import time
+
+    from automesh.geometry import cleanup
+
+    module, messagebox = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    marked = tmp_path / "parca_temizlik.scdoc"
+    marked.write_text("x", encoding="utf-8")
+    seen = {}
+
+    def fake_scan(path, cfg, out):
+        seen["cfg"] = cfg
+        return _cleanup_report(str(marked))
+
+    monkeypatch.setattr(cleanup, "run_cleanup_scan", fake_scan)
+    app.var_geometry.set(step_file)
+    app.var_clean_fillet.set("1,5")
+    app.var_clean_bumps.set(False)
+
+    app._guard("Temizlik taraması", lambda: app._start("cleanup"))
+    assert messagebox.showerror.call_count == 0
+    deadline = time.time() + 10
+    while app.run.running and time.time() < deadline:
+        app._pump()
+        time.sleep(0.01)
+    app.run.join(5)
+    app._pump()
+
+    assert seen["cfg"].cleanup.fillet_max_radius == pytest.approx(0.0015)
+    assert seen["cfg"].cleanup.categories == ["fileto", "vida"]
+    assert app.settings.last_cleaned_path == str(marked)
+    assert "5 fileto" in app.var_clean_summary.get()
+    app.btn_clean_use.configure.assert_called_with(state="normal")
+    assert "automesh temizle" in _logged_text(app)
+
+
+def test_cleanup_rejects_bad_thresholds(fake_tk, tmp_path, monkeypatch,
+                                        step_file):
+    module, messagebox = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    app.var_geometry.set(step_file)
+    app.var_clean_hole.set("on iki")
+    app._start("cleanup")
+    assert messagebox.showerror.call_count == 1
+    assert app.run is None
+
+
+def test_cleanup_needs_at_least_one_category(fake_tk, tmp_path, monkeypatch,
+                                             step_file):
+    module, messagebox = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    app.var_geometry.set(step_file)
+    for flag in (app.var_clean_fillets, app.var_clean_screws, app.var_clean_bumps):
+        flag.set(False)
+    app._start("cleanup")
+    assert messagebox.showerror.call_count == 1
+
+
+def test_cleanup_does_not_need_pyfluent(fake_tk, tmp_path, monkeypatch,
+                                        step_file):
+    """Tarama Fluent açmaz; PyFluent yokken de başlamalı."""
+    from automesh.geometry import cleanup
+
+    module, messagebox = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_pyfluent_available", lambda: False)
+    monkeypatch.setattr(cleanup, "run_cleanup_scan",
+                        lambda *a: _cleanup_report(""))
+    app.var_geometry.set(step_file)
+    app._start("cleanup")
+    assert messagebox.showerror.call_count == 0
+    app.run.join(5)
+
+
+def test_use_cleaned_switches_to_the_simple_tab(fake_tk, tmp_path, monkeypatch):
+    module, _ = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    marked = tmp_path / "parca_temizlik.scdoc"
+    marked.write_text("x", encoding="utf-8")
+    app.settings.last_cleaned_path = str(marked)
+    app._mode = "advanced"
+
+    app._use_cleaned()
+
+    assert app.var_geometry.get() == str(marked)
+    assert app._mode == "simple"
+    app.notebook.select.assert_called_with(0)
+    assert "Ctrl+S" in _logged_text(app)
+
+
+def test_cleanup_buttons_explain_when_nothing_was_scanned(fake_tk, tmp_path,
+                                                          monkeypatch):
+    module, messagebox = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    app._use_cleaned()
+    app._open_cleaned()
+    assert messagebox.showinfo.call_count == 2

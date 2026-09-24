@@ -289,6 +289,16 @@ def test_our_own_groups_are_not_read_back_as_existing(script):
     assert names == ["outlet"]
 
 
+def test_cleanup_marks_are_not_sized_as_user_groups(script):
+    """temizle_* grupları temizlik taramasının işaretleri; boyut önerilmez."""
+    mark = FakeNamedSelection(
+        "temizle_fileto_R0p50mm_01", [FakeFace("Cylinder", radius=0.0005)])
+    theirs = FakeNamedSelection("outlet", [FakeFace("Cylinder", radius=0.002)])
+    script["named_selection_list"] = lambda: [mark, theirs]
+    names = [g["name"] for g in script["describe_existing_groups"]({}, {}, 0.0)]
+    assert names == ["outlet"]
+
+
 def test_existing_groups_without_faces_are_skipped(script):
     script["named_selection_list"] = lambda: [FakeNamedSelection("bos", [])]
     assert script["describe_existing_groups"]({}, {}, 0.0) == []

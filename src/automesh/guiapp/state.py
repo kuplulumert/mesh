@@ -90,6 +90,16 @@ class GuiSettings:
     local_floor: float = 0.0           # m, hiçbir yerel boyut bundan ince olmasın
     open_in_spaceclaim: bool = False   # analiz bitince SpaceClaim'de aç
 
+    # "Temizlik" sekmesi. Eşikler mm cinsinden metin: boş -> otomatik.
+    cleanup_fillet_mm: str = ""
+    cleanup_hole_mm: str = ""
+    cleanup_protrusion_mm: str = ""
+    cleanup_fillets: bool = True
+    cleanup_screws: bool = True
+    cleanup_protrusions: bool = True
+    cleanup_open_spaceclaim: bool = True
+    last_cleaned_path: str = ""        # son taramanın işaretli kopyası
+
     # ------------------------------------------------------------------
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
@@ -189,6 +199,8 @@ class GuiSettings:
             cfg.planning.override_min_size = self.chosen_min_size
             cfg.planning.override_max_size = self.chosen_max_size
 
+        self._apply_cleanup(cfg)
+
         cfg.planning.workflow = self.workflow
         cfg.planning.volume_fill = self.volume_fill
         cfg.planning.max_cell_count = int(self.max_cells)
@@ -267,6 +279,70 @@ class GuiSettings:
                 parts += ["--divisions", "{0}={1:g}".format(name, value)]
             if self.local_floor > 0:
                 parts += ["--min-local-size", "{0:.6g}".format(self.local_floor)]
+        if self.output_dir.strip():
+            parts += ["--out", _quote(self.output_dir.strip())]
+        return " ".join(parts)
+
+    # -- temizlik ----------------------------------------------------------
+    def cleanup_categories(self) -> List[str]:
+        chosen = []
+        for flag, name in ((self.cleanup_fillets, "fileto"),
+                           (self.cleanup_screws, "vida"),
+                           (self.cleanup_protrusions, "cikinti")):
+            if flag:
+                chosen.append(name)
+        return chosen
+
+    def _apply_cleanup(self, cfg: Config) -> None:
+        for attribute, raw in (("fillet_max_radius", self.cleanup_fillet_mm),
+                               ("hole_max_diameter", self.cleanup_hole_mm),
+                               ("protrusion_max_size", self.cleanup_protrusion_mm)):
+            value = _to_float(raw)
+            setattr(cfg.cleanup, attribute,
+                    value * 0.001 if value is not None and value > 0 else 0.0)
+        categories = self.cleanup_categories()
+        if categories:
+            cfg.cleanup.categories = categories
+        cfg.cleanup.open_in_spaceclaim = bool(self.cleanup_open_spaceclaim)
+
+    def validate_cleanup(self) -> List[str]:
+        """Temizlik taramasından önce gösterilecek hatalar."""
+        from ..geometry.base import CAD_EXTENSIONS, extension
+
+        problems: List[str] = []
+        if not self.geometry_path:
+            problems.append("Geometri dosyası seçilmedi.")
+        elif not os.path.isfile(self.geometry_path):
+            problems.append("Geometri dosyası bulunamadı: {0}".format(
+                self.geometry_path))
+        elif extension(self.geometry_path) not in CAD_EXTENSIONS:
+            problems.append("Temizlik taraması SpaceClaim'in açtığı bir CAD "
+                            "dosyası ister (.scdoc önerilir).")
+        for label, raw in (("Fileto yarıçapı", self.cleanup_fillet_mm),
+                           ("Vida/delik çapı", self.cleanup_hole_mm),
+                           ("Çıkıntı boyutu", self.cleanup_protrusion_mm)):
+            if raw.strip():
+                value = _to_float(raw)
+                if value is None or value < 0:
+                    problems.append("{0} sayı olmalı (mm) ya da boş: {1!r}".format(
+                        label, raw))
+        if not self.cleanup_categories():
+            problems.append("En az bir şey aranmalı (fileto, vida ya da çıkıntı).")
+        return problems
+
+    def cleanup_command(self) -> str:
+        """Temizlik taramasının komut satırı karşılığı."""
+        parts = ["automesh", "temizle", _quote(self.geometry_path)]
+        for flag, raw in (("--fileto", self.cleanup_fillet_mm),
+                          ("--vida", self.cleanup_hole_mm),
+                          ("--cikinti", self.cleanup_protrusion_mm)):
+            if raw.strip():
+                parts += [flag, raw.strip().replace(",", ".")]
+        categories = self.cleanup_categories()
+        if categories and len(categories) < 3:
+            parts += ["--kategoriler", ",".join(categories)]
+        if not self.cleanup_open_spaceclaim:
+            parts.append("--acma")
         if self.output_dir.strip():
             parts += ["--out", _quote(self.output_dir.strip())]
         return " ".join(parts)

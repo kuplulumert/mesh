@@ -412,6 +412,8 @@ def describe_existing_groups(params, body_gap_lookup, default_gap):
         name = str(name)
         if name.startswith(prefix):
             continue                      # bizim urettiklerimiz
+        if name.startswith("temizle_"):
+            continue                      # temizlik taramasinin isaretleri
         faces = named_selection_faces(named_selection)
         if not faces:
             continue
@@ -904,5 +906,8 @@ def main():
 
 # SpaceClaim betigi dogrudan calistirir. Testler ayni dosyayi
 # AUTOMESH_SC_NO_RUN=1 ile exec edip saf fonksiyonlari dogrular.
-if not os.environ.get("AUTOMESH_SC_NO_RUN"):
+# Temizlik betigi bu dosyayi yardimci kutuphane olarak basina ekler ve
+# AUTOMESH_SC_LIBRARY = True tanimlar; o zaman analiz calismaz.
+if not os.environ.get("AUTOMESH_SC_NO_RUN") and \
+        not globals().get("AUTOMESH_SC_LIBRARY"):
     main()

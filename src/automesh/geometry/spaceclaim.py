@@ -201,6 +201,21 @@ class SpaceClaimAnalyzer(GeometryAnalyzer):
             shutil.rmtree(workdir, ignore_errors=True)
 
     # ------------------------------------------------------------------
+    def script_command(self, run_script: str, cfg: Config) -> List[str]:
+        """Bir betiği SpaceClaim'de koşturan komut satırı."""
+        return [
+            self._exe or "SpaceClaim.exe",
+            "/Headless={0}".format(
+                "True" if cfg.geometry.spaceclaim_headless else "False"),
+            "/Splash=False",
+            "/Welcome=False",
+            "/ExitAfterScript=True",
+            "/ScriptAPI={0}".format(self._script_api
+                                    or cfg.geometry.spaceclaim_script_api),
+            "/RunScript={0}".format(run_script),
+        ]
+
+    # ------------------------------------------------------------------
     def open_document(self, path: str, cfg: Optional[Config] = None) -> bool:
         """Dosyayı SpaceClaim'de aç ve açık bırak (incelemek için).
 

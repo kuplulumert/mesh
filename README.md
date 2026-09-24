@@ -197,6 +197,51 @@ automesh run parca.scdoc --simple    :: komut satırı karşılığı
 | **Raporu aç / Klasörü aç** | Çalışma bitince etkinleşir |
 | **Komutu kopyala** | Aynı işi yapan `automesh run ...` satırını panoya alır — otomasyona geçerken işe yarar |
 
+### Temizlik sekmesi
+
+Hazır akış hacminde CFD için genellikle gereksiz olan küçük detayları bulur ve
+**SpaceClaim'de grup olarak işaretler. Hiçbir şeyi silmez**; kararı siz
+verirsiniz. Volume Extract'i siz yaparsınız, tarama hazır hacim üzerinde çalışır.
+
+| Kategori | Neyi bulur | Nasıl tanır | Otomatik eşik |
+|---|---|---|---|
+| **fileto** | Küçük round/fileto | Silindir (kısmi), torus veya küre yüzü, yarıçap ≤ eşik. Birbirine bağlı, benzer yarıçaplı fileto yüzleri tek grup olur | 2 mm |
+| **vida** | Vida deliği, vida kulesi (boss), pim | Aynı eksen etrafında toplam 360° yapan küçük silindirler. Pah/havşa (koni), dipteki fileto (torus) ve kapak düzlemi aynı gruba girer | Ø 12 mm |
+| **cikinti** | Kaburga, tırnak, kabartma yazı, küçük cep | Küçük yüzlerden oluşan ve toplamda da küçük kalan küme. Dibindeki fileto da kümeye dahil edilir | 10 mm |
+
+Küçük bir parçada (köşegen 100 mm gibi) otomatik eşikler parça boyutuyla
+küçülür: fileto %1, vida %5, çıkıntı köşegenin %3'ü.
+
+Akış:
+
+1. **Tara ve SpaceClaim'de işaretle.** Kaynak dosyaya dokunulmaz;
+   `<ad>_temizlik.scdoc` kopyası yazılır ve SpaceClaim'de açılır.
+2. SpaceClaim'in **Groups** panelinde her bulgu bir grup olarak görünür:
+   `temizle_fileto_R0p50mm_01`, `temizle_vida_D6p00mm_03`,
+   `temizle_cikinti_S4p20mm_02`. Gruplar küçükten büyüğe sıralanır ve ad
+   ölçüyü söyler. Her kategori için ayrıca bir `temizle_<kategori>_HEPSI`
+   grubu vardır.
+3. Gruba tıklayın: yüzler seçilir. **Delete**'e basarsanız SpaceClaim
+   boşluğu komşu yüzleri uzatarak kapatır. İstemediğiniz bulguyu geçin.
+   Bitince **Ctrl+S**.
+4. **Temizlenmiş dosyayla mesh'e geç** düğmesi kopyayı geometri yapar ve
+   Basit sekmeye geçer.
+
+Sizin named selection'larınıza (inlet, outlet...) ait bir yüz içeren bulgu
+**işaretlenmez**, çünkü silmek o grubu bozar. Günlükte "işaretlenmeyenler"
+altında sebebiyle listelenir. Aynı dosyayı yeniden taratırsanız yalnızca eski
+`temizle_*` grupları yenilenir, sizin gruplarınıza dokunulmaz.
+
+Silmediğiniz `temizle_*` grupları Fluent'e gereksiz bölge olarak gider; işiniz
+bitince Groups panelinden seçip silebilirsiniz. Gelişmiş sekmedeki yüzey
+boyutu akışı bu grupları zaten yok sayar.
+
+```bat
+automesh temizle parca.scdoc                        :: otomatik eşikler
+automesh temizle parca.scdoc --fileto 1.5 --vida 8  :: eşikler mm
+automesh temizle parca.scdoc --kategoriler fileto,vida --acma
+```
+
 ### Birimler
 
 İki ayrı birim var ve karıştırılmamalı:
@@ -656,6 +701,8 @@ automesh propose <geometri>               # ölçümler + seçilebilir mesh kade
 automesh run <geometri> [seçenekler]      # analiz + planla + meshle + raporla
 automesh plan <geometri>                  # analiz + plan (Fluent açılmaz)
 automesh analyze <geometri>               # sadece geometri metrikleri
+automesh temizle <geometri> [seçenekler]  # küçük detayları SpaceClaim'de işaretle
+automesh kisayol                          # masaüstü + Başlat menüsü kısayolu
 automesh diagnose <log|-> [--stage ...]   # bir Fluent çıktısını teşhis et
 automesh rules                            # bilgi tabanını listele
 automesh config -o automesh.json          # örnek konfigürasyon üret
@@ -687,6 +734,10 @@ automesh config -o automesh.json          # örnek konfigürasyon üret
 
 `doctor` için: `--add-path <klasör>` kalıcı olarak Python yoluna ekler,
 `--remove-path <klasör>` çıkarır.
+
+`temizle` için: `--fileto MM`, `--vida MM`, `--cikinti MM` eşikleri (birimsiz
+sayı mm'dir, boş bırakılırsa otomatik), `--kategoriler fileto,vida,cikinti`,
+`--acma` (bitince SpaceClaim'i açma), `-o KLASÖR`.
 
 ---
 
