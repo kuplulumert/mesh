@@ -956,16 +956,63 @@ def cleanup_scan(params):
 
     save_path = params.get("export", "")
     if save_path:
-        try:
-            folder = os.path.dirname(save_path)
-            if folder and not os.path.isdir(folder):
-                os.makedirs(folder)
-            DocumentSave.Execute(save_path)                       # noqa: F821
-            result["saved_path"] = save_path
-        except Exception:
-            result["warnings"].append("Kaydedilemedi: %s"
-                                      % traceback.format_exc().splitlines()[-1])
+        saved, method, errors = save_copy(save_path)
+        diag["kaydetme"] = method
+        if saved:
+            result["saved_path"] = saved
+        else:
+            result["warnings"].append(
+                "Isaretli kopya diske yazilamadi (%s). Denenenler: %s"
+                % (save_path, " | ".join(errors) or "-"))
     return result
+
+
+def _find_written(path):
+    """Kaydedilen dosya: tam yol, yoksa ayni adla baska uzantida."""
+    if os.path.isfile(path):
+        return path
+    folder = os.path.dirname(path) or "."
+    stem = os.path.splitext(os.path.basename(path))[0]
+    try:
+        for name in os.listdir(folder):
+            if os.path.splitext(name)[0] == stem and \
+                    name.lower().endswith((".scdoc", ".scdocx")):
+                return os.path.join(folder, name)
+    except Exception:
+        pass
+    return ""
+
+
+def save_copy(path):
+    """Belgeyi kopya olarak kaydet; diske gercekten yazildigini dogrula.
+
+    SpaceClaim surumlerine gore farkli yollar calisiyor; her denemeden sonra
+    dosyanin varligina bakilir.  (yazilan yol, yontem, hatalar) doner.
+    """
+    folder = os.path.dirname(path)
+    if folder and not os.path.isdir(folder):
+        os.makedirs(folder)
+    attempts = (
+        ("DocumentSave", lambda: DocumentSave.Execute(path)),              # noqa: F821
+        ("DocumentSave+secenek",
+         lambda: DocumentSave.Execute(path, ExportOptions.Create())),      # noqa: F821
+        ("Document.SaveAs",
+         lambda: Window.ActiveWindow.Document.SaveAs(path)),               # noqa: F821
+        ("RootPart.SaveAs",
+         lambda: GetRootPart().Document.SaveAs(path)),                     # noqa: F821
+    )
+    errors = []
+    for name, action in attempts:
+        try:
+            action()
+        except Exception:
+            errors.append("%s: %s" % (name, traceback.format_exc().splitlines()[-1]))
+            continue
+        written = _find_written(path)
+        if written:
+            return written, name, errors
+        errors.append("%s: hata yok ama dosya olusmadi" % name)
+    return "", "yok", errors
 
 
 def cleanup_main():

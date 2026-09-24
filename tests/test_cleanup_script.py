@@ -449,7 +449,8 @@ class Group:
 class FakeSpaceClaim:
     """SpaceClaim'in betiğin kullandığı küçük parçası."""
 
-    def __init__(self, bodies, groups=()):
+    def __init__(self, bodies, groups=(), writes=True):
+        self.writes = writes
         self.bodies = bodies
         self.groups = list(groups)
         self.saved = []
@@ -460,8 +461,12 @@ class FakeSpaceClaim:
         ns["Matrix"] = type("M", (), {"Identity": None})
         ns["DocumentOpen"] = type("DO", (), {"Execute": staticmethod(
             lambda path: app.opened.append(path))})
-        ns["DocumentSave"] = type("DS", (), {"Execute": staticmethod(
-            lambda path: app.saved.append(path))})
+        def save(path, *_options):
+            app.saved.append(path)
+            if app.writes:
+                open(path, "w").write("scdoc")
+
+        ns["DocumentSave"] = type("DS", (), {"Execute": staticmethod(save)})
 
         class Part:
             Bodies = app.bodies
@@ -520,9 +525,13 @@ def _model():
     return faces, Body(faces, (-0.1, -0.1, -0.01, 0.1, 0.1, 0.01))
 
 
-def _scan(sc, fake, **params):
+def _scan(sc, fake, export=None, **params):
+    import tempfile
+
     fake.install(sc)
-    base = {"input": "M:/CAD/parca.scdoc", "export": "C:/runs/parca_temizlik.scdoc"}
+    if export is None:
+        export = os.path.join(tempfile.mkdtemp(), "parca_temizlik.scdoc")
+    base = {"input": "M:/CAD/parca.scdoc", "export": export}
     base.update(params)
     return sc["cleanup_scan"](base)
 
@@ -537,10 +546,11 @@ def test_face_record_reads_axis_span_and_radius(sc):
     assert record["span"] == pytest.approx(math.pi)
 
 
-def test_scan_marks_features_and_saves_a_copy(sc):
+def test_scan_marks_features_and_saves_a_copy(sc, tmp_path):
     faces, body = _model()
     fake = FakeSpaceClaim([body])
-    result = _scan(sc, fake)
+    export = str(tmp_path / "parca_temizlik.scdoc")
+    result = _scan(sc, fake, export)
 
     assert result["summary"] == {"fileto": 1, "vida": 1, "cikinti": 0}
     names = fake.names()
@@ -550,8 +560,9 @@ def test_scan_marks_features_and_saves_a_copy(sc):
     screw = [f for f in result["features"] if f["category"] == "vida"][0]
     assert screw["face_count"] == 3 and screw["created"]
     # kopyaya kaydedildi, kaynağa değil
-    assert fake.saved == ["C:/runs/parca_temizlik.scdoc"]
-    assert result["saved_path"] == "C:/runs/parca_temizlik.scdoc"
+    assert fake.saved == [export]
+    assert result["saved_path"] == export
+    assert result["diagnostics"]["kaydetme"] == "DocumentSave"
     assert result["diagnostics"]["komsuluk"] == "kimlik"
 
 
@@ -654,3 +665,20 @@ def test_coaxial_faces_with_float_noise_still_cluster(sc):
     records[2]["axis"] = ((0.05 + 2e-9, 0.05 - 3e-9, 0.0), Z)
     screws = _by_category(sc["detect_features"](records, THRESHOLDS), "vida")
     assert len(screws) == 1 and screws[0]["faces"] == [1, 2, 3]
+
+
+def test_silent_save_failure_is_reported_not_claimed(sc, tmp_path):
+    """SpaceClaim hata vermeden dosya yazmazsa kopya 'kaydedildi' denmemeli."""
+    faces, body = _model()
+    fake = FakeSpaceClaim([body], writes=False)
+    result = _scan(sc, fake, str(tmp_path / "x_temizlik.scdoc"))
+    assert "saved_path" not in result
+    assert any("diske yazilamadi" in w for w in result["warnings"])
+    assert result["diagnostics"]["kaydetme"] == "yok"
+
+
+def test_save_found_under_another_extension(sc, tmp_path):
+    """.scdoc istendi ama SpaceClaim .scdocx yazdıysa o dosya kullanılır."""
+    other = tmp_path / "x_temizlik.scdocx"
+    other.write_text("x")
+    assert sc["_find_written"](str(tmp_path / "x_temizlik.scdoc")) == str(other)

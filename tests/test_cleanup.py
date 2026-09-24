@@ -89,6 +89,12 @@ def test_output_path_uses_the_suffix(tmp_path):
     assert os.path.basename(target) == "Multicyclone_temizlik.scdoc"
 
 
+def test_scdocx_input_keeps_its_format(tmp_path):
+    """Design30.scdocx -> Design30_temizlik.scdocx (uyuşmazlıkta yazılmıyordu)."""
+    target = cleanup.cleanup_output_path("E:/x/Design30.scdocx", str(tmp_path))
+    assert os.path.basename(target) == "Design30_temizlik.scdocx"
+
+
 def test_params_follow_the_settings():
     cfg = Config()
     cfg.cleanup.fillet_max_radius = 0.0015
@@ -297,3 +303,28 @@ def test_cli_reports_scan_errors_cleanly(monkeypatch, capsys, source):
     monkeypatch.setattr(cleanup, "run_cleanup_scan", boom)
     assert cli.main(["temizle", str(source)]) == 2
     assert "SpaceClaim.exe bulunamadı" in capsys.readouterr().err
+
+
+def test_report_lines_reach_the_log_even_without_setup(tmp_path, source):
+    """Arayüzden çağrıda seviye ayarsızdı; bulgu listesi günlüğe düşmüyordu."""
+    import logging
+
+    from automesh.logging_utils import get_logger
+
+    logger = get_logger()
+    old_level = logger.level
+    logger.setLevel(logging.NOTSET)
+    lines = []
+    handler = logging.Handler(logging.INFO)
+    handler.emit = lambda record: lines.append(record.getMessage())
+    logger.addHandler(handler)
+    try:
+        runner, _ = _fake_runner(RAW)
+        cleanup.run_cleanup_scan(str(source), Config(), str(tmp_path / "o"),
+                                 analyzer=FakeAnalyzer(), runner=runner)
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(old_level)
+    text = "\n".join(lines)
+    assert "temizle_fileto_R0p50mm_01" in text
+    assert "Kaydetme yöntemi" in text

@@ -20,6 +20,7 @@ koşar ve ölçüm/grup fonksiyonlarını analiz betiğinden alır: çalıştır
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -235,12 +236,15 @@ def cleanup_params(cfg: Config) -> Dict:
 
 def cleanup_output_path(source: str, folder: str, suffix: str = "_temizlik") -> str:
     """İşaretli kopyanın yeri. Kaynağın üzerine ASLA yazılmaz."""
-    stem = os.path.splitext(os.path.basename(source))[0]
+    stem, ext = os.path.splitext(os.path.basename(source))
+    # .scdocx girdisi .scdocx olarak kaydedilir: SpaceClaim formatı
+    # uzantıdan değil belgeden alabiliyor, uyuşmazlıkta dosya yazılmıyordu.
+    ext = ext.lower() if ext.lower() in (".scdoc", ".scdocx") else ".scdoc"
     target = os.path.join(os.path.abspath(folder), stem + (suffix or "_temizlik")
-                          + ".scdoc")
+                          + ext)
     if os.path.normcase(os.path.abspath(target)) == \
             os.path.normcase(os.path.abspath(source)):
-        target = os.path.join(os.path.abspath(folder), stem + "_temizlik2.scdoc")
+        target = os.path.join(os.path.abspath(folder), stem + "_temizlik2" + ext)
     return target
 
 
@@ -280,6 +284,10 @@ def run_cleanup_scan(path: str, cfg: Config, output_dir: Optional[str] = None,
                      runner: Callable = _run_process) -> CleanupReport:
     """SpaceClaim'de tarat, işaretli kopyayı kaydet, istenirse aç."""
     log = get_logger()
+    # Arayüzden çağrıldığında seviye ayarlanmamış olabilir; ayarlanmazsa
+    # bilgi satırları (bulgu listesi) düşer, yalnızca uyarılar görünürdü.
+    if log.getEffectiveLevel() > logging.INFO:
+        log.setLevel(logging.INFO)
     if not path or not os.path.isfile(path):
         raise GeometryAnalyzerError("Geometri dosyası bulunamadı: {0}".format(path))
     if extension(path) not in CAD_EXTENSIONS:
@@ -347,6 +355,7 @@ def run_cleanup_scan(path: str, cfg: Config, output_dir: Optional[str] = None,
     for line in format_report(report):
         log.info("%s", line)
     _log_diagnostics(log, report)
+    log.info("Kaydetme yöntemi   : %s", report.diagnostics.get("kaydetme", "?"))
 
     if report.saved_path and os.path.isfile(report.saved_path):
         for line in usage_hint(report.saved_path):
