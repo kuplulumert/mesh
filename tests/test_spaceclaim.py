@@ -123,10 +123,16 @@ def test_open_document_launches_a_detached_process(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
     analyzer = SpaceClaimAnalyzer(exe=str(exe), script_api="252")
     assert analyzer.open_document(str(document), Config()) is True
-    assert launched["cmd"] == [str(exe), str(document)]
-    # Betik çalıştırılmamalı, kapanma zorlanmamalı
-    assert not any("RunScript" in str(part) for part in launched["cmd"])
-    assert not any("ExitAfterScript" in str(part) for part in launched["cmd"])
+    cmd = launched["cmd"]
+    assert cmd[0] == str(exe)
+    assert "/Headless=False" in cmd
+    # SpaceClaim açık kalmalı
+    assert not any("ExitAfterScript" in str(part) for part in cmd)
+    # Dosyayı küçük bir betik açar
+    script = [part for part in cmd if part.startswith("/RunScript=")][0]
+    text = open(script.split("=", 1)[1], encoding="utf-8").read()
+    assert "DocumentOpen.Execute" in text and str(document) in text
+    compile(text, "ac.py", "exec")
 
 
 def test_open_document_is_quiet_when_there_is_nothing_to_open(tmp_path):

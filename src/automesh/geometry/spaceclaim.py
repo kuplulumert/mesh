@@ -238,14 +238,40 @@ class SpaceClaimAnalyzer(GeometryAnalyzer):
             kwargs["creationflags"] = getattr(subprocess, "DETACHED_PROCESS", 0)
         else:  # pragma: no cover - geliştirme ortamı
             kwargs["start_new_session"] = True
+        # Dosyayı komut satırı argümanı olarak vermek her sürümde çalışmıyor;
+        # tarama/analizde çalıştığı bilinen /RunScript yolu kullanılır:
+        # küçük bir betik dosyayı açar, SpaceClaim açık kalır.
+        cmd = [self._exe, "/Headless=False", "/Splash=False", "/Welcome=False",
+               "/ScriptAPI={0}".format(
+                   self._script_api
+                   or (cfg.geometry.spaceclaim_script_api if cfg else "251")),
+               "/RunScript={0}".format(self._open_script(path))]
         try:
-            subprocess.Popen([self._exe, path], **kwargs)
+            subprocess.Popen(cmd, **kwargs)
         except OSError as exc:
-            log.warning("SpaceClaim açılamadı: %s", exc)
-            return False
+            log.warning("SpaceClaim betikle açılamadı (%s); dosya "
+                        "ilişkilendirmesi deneniyor.", exc)
+            try:
+                os.startfile(path)                  # type: ignore[attr-defined]
+            except (OSError, AttributeError) as exc2:
+                log.warning("SpaceClaim açılamadı: %s", exc2)
+                return False
         log.info("SpaceClaim açılıyor: %s", os.path.basename(path))
         log.info("Grupları sol taraftaki 'Groups' panelinde göreceksiniz.")
         return True
+
+    @staticmethod
+    def _open_script(path: str) -> str:
+        """Dosyayı açan tek satırlık betik (SpaceClaim başlarken okur, silinmez)."""
+        folder = os.path.join(tempfile.gettempdir(), "automesh-ac")
+        os.makedirs(folder, exist_ok=True)
+        script = os.path.join(folder, "ac_{0}.py".format(
+            abs(hash(os.path.abspath(path))) % 10 ** 8))
+        with open(script, "w", encoding="utf-8") as fh:
+            fh.write("# -*- coding: utf-8 -*-\n"
+                     "DocumentOpen.Execute(r\"{0}\")\n".format(
+                         os.path.abspath(path)))
+        return script
 
     # ------------------------------------------------------------------
     def _final_export_path(self, source: str, exported: str, cfg: Config) -> str:
