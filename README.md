@@ -212,6 +212,14 @@ verirsiniz. Volume Extract'i siz yaparsınız, tarama hazır hacim üzerinde ça
 Küçük bir parçada (köşegen 100 mm gibi) otomatik eşikler parça boyutuyla
 küçülür: fileto %1, vida %5, çıkıntı köşegenin %3'ü.
 
+**0. Envanter çıkar** eşik kullanmaz, her şeyi sınıflandırır. Her fileto,
+tam silindir (delik/vida/boru), çıkıntı ve kalan her yüz, benzerlerle birlikte
+bir `envanter_*` grubuna girer. Benzerlik ölçüsü ölçüler arasında en fazla %5
+fark: `envanter_fileto_R1p00mm` (12 adet), `envanter_vida_D6p00mm` (6 adet),
+`envanter_yuzey_duzlem`, `envanter_yuzey_serbest`... Kopya `<ad>_envanter`
+olarak yazılır ve SpaceClaim'de açılır. Hiçbir şey silinmez; sizin
+gruplarınıza dokunan grup günlükte işaretlenir.
+
 Akış:
 
 1. **Tara ve SpaceClaim'de işaretle.** Kaynak dosyaya dokunulmaz;
@@ -240,6 +248,7 @@ boyutu akışı bu grupları zaten yok sayar.
 automesh temizle parca.scdoc                        :: otomatik eşikler
 automesh temizle parca.scdoc --fileto 1.5 --vida 8  :: eşikler mm
 automesh temizle parca.scdoc --kategoriler fileto,vida --acma
+automesh temizle parca.scdoc --envanter             :: her şeyi sınıflandır
 ```
 
 ### Birimler

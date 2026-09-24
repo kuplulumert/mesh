@@ -26,7 +26,7 @@ LOG = "log"
 DONE = "done"
 ERROR = "error"
 
-MODES = ("run", "analyze", "plan", "propose", "cleanup")
+MODES = ("run", "analyze", "plan", "propose", "cleanup", "inventory")
 
 
 @dataclass
@@ -115,7 +115,7 @@ class BackgroundRun:
                 self._do_run()
             elif self.mode == "propose":
                 self._do_propose()
-            elif self.mode == "cleanup":
+            elif self.mode in ("cleanup", "inventory"):
                 self._do_cleanup()
             else:
                 self._do_inspect()
@@ -141,7 +141,8 @@ class BackgroundRun:
 
         cfg = self.settings.to_config()
         self.cleanup_report = run_cleanup_scan(
-            self.settings.geometry_path, cfg, self.settings.run_directory())
+            self.settings.geometry_path, cfg, self.settings.run_directory(),
+            mode=self.mode)
 
     def _do_propose(self) -> None:
         """Ölçümleri al ve seçilebilir kademeleri üret (Fluent açılmaz)."""

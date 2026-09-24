@@ -150,6 +150,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Aranacaklar, virgülle: fileto,vida,cikinti")
     clean.add_argument("--acma", action="store_true",
                        help="Bitince SpaceClaim'de açma")
+    clean.add_argument("--envanter", action="store_true",
+                       help="Eşik yok: her fileto, delik, çıkıntı ve yüzeyi "
+                            "benzerliğe göre envanter_* gruplarında topla")
 
     # ---- diagnose --------------------------------------------------------
     diagnose = sub.add_parser("diagnose", parents=[common],
@@ -436,11 +439,18 @@ def cmd_temizle(args: argparse.Namespace) -> int:
     from .geometry.base import GeometryAnalyzerError
 
     try:
-        report = run_cleanup_scan(args.geometry, cfg, args.out)
+        report = run_cleanup_scan(
+            args.geometry, cfg, args.out,
+            mode="inventory" if args.envanter else "cleanup")
     except GeometryAnalyzerError as exc:
         print("Hata: {0}".format(exc), file=sys.stderr)
         return 2
     print()
+    if args.envanter:
+        print("Envanter: {0} benzerlik grubu.".format(len(report.inventory)))
+        if report.saved_path:
+            print("Envanter kopyası: {0}".format(report.saved_path))
+        return 0
     print("Toplam {0} detay işaretlendi: {1}".format(
         report.total, ", ".join("{0} {1}".format(report.summary.get(c, 0), c)
                                 for c in CATEGORIES)))

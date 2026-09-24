@@ -412,7 +412,7 @@ def describe_existing_groups(params, body_gap_lookup, default_gap):
         name = str(name)
         if name.startswith(prefix):
             continue                      # bizim urettiklerimiz
-        if name.startswith("temizle_"):
+        if name.startswith(("temizle_", "envanter_")):
             continue                      # temizlik taramasinin isaretleri
         faces = named_selection_faces(named_selection)
         if not faces:

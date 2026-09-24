@@ -515,7 +515,7 @@ def test_cleanup_scan_runs_and_offers_the_marked_copy(fake_tk, tmp_path,
     marked.write_text("x", encoding="utf-8")
     seen = {}
 
-    def fake_scan(path, cfg, out):
+    def fake_scan(path, cfg, out, **_kw):
         seen["cfg"] = cfg
         return _cleanup_report(str(marked))
 
@@ -572,7 +572,7 @@ def test_cleanup_does_not_need_pyfluent(fake_tk, tmp_path, monkeypatch,
     app = _app(module, tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_pyfluent_available", lambda: False)
     monkeypatch.setattr(cleanup, "run_cleanup_scan",
-                        lambda *a: _cleanup_report(""))
+                        lambda *a, **k: _cleanup_report(""))
     app.var_geometry.set(step_file)
     app._start("cleanup")
     assert messagebox.showerror.call_count == 0
@@ -602,3 +602,27 @@ def test_cleanup_buttons_explain_when_nothing_was_scanned(fake_tk, tmp_path,
     app._use_cleaned()
     app._open_cleaned()
     assert messagebox.showinfo.call_count == 2
+
+
+def test_inventory_button_runs_inventory_mode(fake_tk, tmp_path, monkeypatch,
+                                              step_file):
+    from automesh.geometry import cleanup
+
+    module, messagebox = fake_tk
+    app = _app(module, tmp_path, monkeypatch)
+    seen = {}
+
+    def fake_scan(path, cfg, out, **kw):
+        seen.update(kw)
+        return _cleanup_report(str(tmp_path / "x_envanter.scdoc"))
+
+    monkeypatch.setattr(cleanup, "run_cleanup_scan", fake_scan)
+    assert app.btn_inventory in app._action_buttons
+    app.var_geometry.set(step_file)
+    app._start("inventory")
+    app.run.join(5)
+    app._pump()
+    assert messagebox.showerror.call_count == 0
+    assert seen["mode"] == "inventory"
+    assert "--envanter" in _logged_text(app)
+    assert "envanter" in app.var_clean_summary.get()

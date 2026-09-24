@@ -83,6 +83,33 @@ class SkippedFeature:
     reason: str
 
 
+INVENTORY_LABELS = {
+    "fileto": "Fileto / round",
+    "vida": "Tam silindir (delik, vida, boru)",
+    "cikinti": "Çıkıntı / cep",
+    "yuzey": "Diğer yüzeyler",
+}
+SURFACE_NAMES = {"duzlem": "düzlem", "silindir": "silindir (kısmi, büyük)",
+                 "koni": "koni", "torus": "torus", "kure": "küre",
+                 "serbest": "serbest form (NURBS)"}
+
+
+@dataclass
+class InventoryGroup:
+    """Envanterde bir benzerlik grubu: aynı tür + benzer ölçü."""
+    category: str
+    name: str
+    kind: str
+    size: float
+    size_min: float
+    size_max: float
+    count: int
+    face_count: int
+    user_groups: List[str] = field(default_factory=list)
+    created: bool = True
+    note: str = ""
+
+
 @dataclass
 class CleanupReport:
     source_path: str = ""
@@ -97,6 +124,7 @@ class CleanupReport:
     summary: Dict[str, int] = field(default_factory=dict)
     diagnostics: Dict[str, object] = field(default_factory=dict)
     warnings: List[str] = field(default_factory=list)
+    inventory: List[InventoryGroup] = field(default_factory=list)
 
     @property
     def total(self) -> int:
@@ -141,6 +169,20 @@ def report_from_raw(raw: Dict) -> CleanupReport:
             extent=float(item.get("extent", 0.0) or 0.0),
             center=_center(item.get("center")),
             face_count=int(item.get("face_count", 0) or 0),
+            created=bool(item.get("created", True)),
+            note=str(item.get("note", "") or ""),
+        ))
+    for item in raw.get("inventory") or []:
+        report.inventory.append(InventoryGroup(
+            category=str(item.get("category", "")),
+            name=str(item.get("name", "")),
+            kind=str(item.get("kind", "") or ""),
+            size=float(item.get("size", 0.0) or 0.0),
+            size_min=float(item.get("size_min", 0.0) or 0.0),
+            size_max=float(item.get("size_max", 0.0) or 0.0),
+            count=int(item.get("count", 0) or 0),
+            face_count=int(item.get("face_count", 0) or 0),
+            user_groups=[str(g) for g in (item.get("user_groups") or [])],
             created=bool(item.get("created", True)),
             note=str(item.get("note", "") or ""),
         ))
@@ -201,6 +243,40 @@ def format_report(report: CleanupReport) -> List[str]:
     return lines
 
 
+def format_inventory(report: CleanupReport) -> List[str]:
+    """Envanter: kategori -> benzerlik grupları (adet, ölçü aralığı)."""
+    lines = ["--- Geometri envanteri ---",
+             "Gövde / yüz        : {0} / {1}".format(report.body_count,
+                                                    report.face_count), ""]
+    if not report.inventory:
+        lines.append("Hiç yüz sınıflandırılamadı.")
+    for category in ("fileto", "vida", "cikinti", "yuzey"):
+        groups = [g for g in report.inventory if g.category == category]
+        if not groups:
+            continue
+        total = sum(g.count for g in groups)
+        lines.append("{0}: {1} adet, {2} grup".format(
+            INVENTORY_LABELS[category], total, len(groups)))
+        for g in groups:
+            if category == "yuzey":
+                measure = SURFACE_NAMES.get(g.kind, g.kind)
+            elif g.size_max > g.size_min * 1.001:
+                measure = "{0} - {1}".format(_mm(g.size_min), _mm(g.size_max))
+            else:
+                measure = _mm(g.size)
+            extra = ""
+            if g.user_groups:
+                extra += "  [sizin grubunuz: {0}]".format(", ".join(g.user_groups))
+            if not g.created:
+                extra += "  [grup oluşturulamadı: {0}]".format(g.note or "?")
+            lines.append("  {0:<36} {1:>4} adet  {2}{3}".format(
+                g.name, g.count, measure, extra))
+        lines.append("")
+    for warning in report.warnings:
+        lines.append("! " + warning)
+    return lines
+
+
 def usage_hint(saved_path: str) -> List[str]:
     """SpaceClaim'de ne yapılacağı - her taramadan sonra gösterilir."""
     return [
@@ -221,7 +297,7 @@ def usage_hint(saved_path: str) -> List[str]:
 # çalıştırma
 # --------------------------------------------------------------------------
 
-def cleanup_params(cfg: Config) -> Dict:
+def cleanup_params(cfg: Config, mode: str = "cleanup") -> Dict:
     settings = cfg.cleanup
     categories = [c for c in (settings.categories or CATEGORIES) if c in CATEGORIES]
     return {
@@ -231,6 +307,7 @@ def cleanup_params(cfg: Config) -> Dict:
         "categories": categories or list(CATEGORIES),
         "max_groups": int(settings.max_groups_per_category),
         "create_groups": True,
+        "mode": mode,
     }
 
 
@@ -281,8 +358,13 @@ def _run_process(cmd: List[str], env: Dict[str, str], timeout: int):
 
 def run_cleanup_scan(path: str, cfg: Config, output_dir: Optional[str] = None,
                      analyzer: Optional[SpaceClaimAnalyzer] = None,
-                     runner: Callable = _run_process) -> CleanupReport:
-    """SpaceClaim'de tarat, işaretli kopyayı kaydet, istenirse aç."""
+                     runner: Callable = _run_process,
+                     mode: str = "cleanup") -> CleanupReport:
+    """SpaceClaim'de tarat, işaretli kopyayı kaydet, istenirse aç.
+
+    ``mode="inventory"``: eşik yok, her şey sınıflandırılır ve benzerler
+    ``envanter_*`` gruplarında toplanır.
+    """
     log = get_logger()
     # Arayüzden çağrıldığında seviye ayarlanmamış olabilir; ayarlanmazsa
     # bilgi satırları (bulgu listesi) düşer, yalnızca uyarılar görünürdü.
@@ -305,7 +387,8 @@ def run_cleanup_scan(path: str, cfg: Config, output_dir: Optional[str] = None,
 
     folder = output_dir or default_output_dir(path, cfg)
     os.makedirs(folder, exist_ok=True)
-    target = cleanup_output_path(path, folder, cfg.cleanup.output_suffix)
+    suffix = "_envanter" if mode == "inventory" else cfg.cleanup.output_suffix
+    target = cleanup_output_path(path, folder, suffix)
 
     workdir = tempfile.mkdtemp(prefix="automesh-temizlik-")
     try:
@@ -313,7 +396,7 @@ def run_cleanup_scan(path: str, cfg: Config, output_dir: Optional[str] = None,
         output_file = os.path.join(workdir, "cleanup.json")
         params = {"input": os.path.abspath(path), "output": output_file,
                   "export": target}
-        params.update(cleanup_params(cfg))
+        params.update(cleanup_params(cfg, mode))
         with open(params_file, "w", encoding="utf-8") as handle:
             json.dump(params, handle, indent=2)
 
@@ -352,7 +435,8 @@ def run_cleanup_scan(path: str, cfg: Config, output_dir: Optional[str] = None,
         shutil.rmtree(workdir, ignore_errors=True)
 
     report = report_from_raw(raw)
-    for line in format_report(report):
+    for line in (format_inventory(report) if mode == "inventory"
+                 else format_report(report)):
         log.info("%s", line)
     _log_diagnostics(log, report)
     log.info("Kaydetme yöntemi   : %s", report.diagnostics.get("kaydetme", "?"))

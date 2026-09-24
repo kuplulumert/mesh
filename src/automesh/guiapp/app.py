@@ -299,6 +299,12 @@ class AutoMeshApp:
 
         bar = ttk.Frame(parent)
         bar.grid(row=3, column=0, sticky="ew", pady=(PAD, 0))
+        self.btn_inventory = ttk.Button(
+            bar, text="0. Envanter çıkar (her şeyi sınıflandır)",
+            command=lambda: self._guard("Geometri envanteri",
+                                        lambda: self._start("inventory")))
+        self.btn_inventory.pack(side="left", padx=(0, PAD))
+        self._action_buttons.append(self.btn_inventory)
         self.btn_clean_scan = ttk.Button(
             bar, text="1. Tara ve SpaceClaim'de işaretle",
             command=lambda: self._guard("Temizlik taraması",
@@ -325,10 +331,17 @@ class AutoMeshApp:
         report = getattr(self.run, "cleanup_report", None) if self.run else None
         if report is None:
             return
+        inventory = getattr(self.run, "mode", "") == "inventory"
+        names = (("fileto", "fileto"), ("vida", "vida noktası"),
+                 ("cikinti", "çıkıntı"))
+        if inventory:
+            names = (("fileto", "fileto"), ("vida", "tam silindir"),
+                     ("cikinti", "çıkıntı"), ("yuzey", "yüzey"))
         counts = ", ".join("{0} {1}".format(report.summary.get(key, 0), name)
-                           for key, name in (("fileto", "fileto"),
-                                             ("vida", "vida noktası"),
-                                             ("cikinti", "çıkıntı")))
+                           for key, name in names)
+        if inventory:
+            counts = "envanter ({0} grup): {1}".format(len(report.inventory),
+                                                      counts)
         if report.saved_path:
             self.settings.last_cleaned_path = report.saved_path
             self.settings.save()
@@ -745,7 +758,7 @@ class AutoMeshApp:
             messagebox.showinfo("AutoMesh", "Zaten çalışan bir iş var.")
             return
         settings = self._collect()
-        problems = (settings.validate_cleanup() if kind == "cleanup"
+        problems = (settings.validate_cleanup() if kind in ("cleanup", "inventory")
                     else settings.validate())
         if problems:
             messagebox.showerror("Eksik veya hatalı bilgi", "\n".join(problems))
@@ -759,7 +772,8 @@ class AutoMeshApp:
         self._clear_log()
         label = {"analyze": "Geometri analizi", "plan": "Plan hesaplama",
                  "propose": "Geometri analizi", "run": "Mesh oluşturma",
-                 "cleanup": "Temizlik taraması"}[kind]
+                 "cleanup": "Temizlik taraması",
+                 "inventory": "Geometri envanteri"}[kind]
         self._append("=== {0} başlıyor ===".format(label), "OK")
         if settings.is_simple and kind == "run":
             self._append(
@@ -769,7 +783,12 @@ class AutoMeshApp:
             self._append(
                 "PROVA modu: Fluent açılmayacak, lisans harcanmayacak "
                 "(senaryo: {0}).".format(settings.scenario), "WARNING")
-        if kind == "cleanup":
+        if kind == "inventory":
+            self._append("Eşik yok: her fileto, delik, çıkıntı ve yüzey "
+                         "benzerliğe göre envanter_* gruplarında toplanır. "
+                         "Hiçbir şey silinmez.", "INFO")
+            command = settings.cleanup_command() + " --envanter"
+        elif kind == "cleanup":
             self._append("Hiçbir şey silinmez: bulunan detaylar SpaceClaim'de "
                          "temizle_* grubu olarak işaretlenir, kaynak dosyaya "
                          "dokunulmaz.", "INFO")
@@ -859,7 +878,8 @@ class AutoMeshApp:
                         self._remember_prepared_file()
                         if self.run is not None and self.run.mode == "propose":
                             self._show_proposals()
-                        if self.run is not None and self.run.mode == "cleanup":
+                        if self.run is not None and \
+                                self.run.mode in ("cleanup", "inventory"):
                             self._cleanup_done()
         except Exception:
             for line in traceback.format_exc().strip().splitlines():

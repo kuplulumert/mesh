@@ -682,3 +682,70 @@ def test_save_found_under_another_extension(sc, tmp_path):
     other = tmp_path / "x_temizlik.scdocx"
     other.write_text("x")
     assert sc["_find_written"](str(tmp_path / "x_temizlik.scdoc")) == str(other)
+
+
+# -- envanter ------------------------------------------------------------------
+
+def _f(category, size, face):
+    return {"category": category, "faces": [face], "size": size,
+            "extent": 0.0, "center": (0, 0, 0), "bbox": None}
+
+
+def test_similar_sizes_share_a_group(sc):
+    features = [_f("fileto", 1.00 * MM, 0), _f("fileto", 1.03 * MM, 1),
+                _f("fileto", 2.0 * MM, 2), _f("vida", 6 * MM, 3)]
+    groups = sc["similarity_groups"](features)
+    fillets = [g for g in groups if g["category"] == "fileto"]
+    assert [g["count"] for g in fillets] == [2, 1]
+    assert fillets[0]["name"] == "envanter_fileto_R1p00mm"
+    assert fillets[0]["faces"] == [0, 1]
+
+
+def test_surfaces_are_grouped_by_type(sc):
+    features = [dict(_f("yuzey", 0.0, 0), kind="duzlem"),
+                dict(_f("yuzey", 0.0, 1), kind="duzlem"),
+                dict(_f("yuzey", 0.0, 2), kind="serbest")]
+    names = {g["name"]: g["count"] for g in sc["similarity_groups"](features)}
+    assert names == {"envanter_yuzey_duzlem": 2, "envanter_yuzey_serbest": 1}
+
+
+def test_too_many_groups_fold_into_other(sc):
+    features = [_f("fileto", (1 + 0.5 * i) * MM, i) for i in range(10)]
+    groups = sc["similarity_groups"](features, max_groups=4)
+    assert len(groups) == 4
+    assert groups[-1]["name"] == "envanter_fileto_diger"
+    assert groups[-1]["count"] == 7
+
+
+def test_inventory_classifies_every_face(sc, tmp_path):
+    """Eşik yok: fileto, delik ve geri kalan her yüz bir gruba düşer."""
+    faces, body = _model()
+    fake = FakeSpaceClaim([body])
+    result = _scan(sc, fake, str(tmp_path / "x_envanter.scdoc"), mode="inventory")
+    names = {g["name"]: g for g in result["inventory"]}
+    assert "envanter_vida_D6p00mm" in names
+    assert "envanter_fileto_R1p00mm" in names
+    assert "envanter_yuzey_duzlem" in names          # duvar
+    assert sum(g["face_count"] for g in result["inventory"]) == len(faces)
+    assert all(n in fake.names() for n in names)
+    assert not any(n.startswith("temizle_") for n in fake.names())
+    assert result["saved_path"].endswith("x_envanter.scdoc")
+
+
+def test_inventory_notes_user_groups_but_does_not_skip(sc, tmp_path):
+    faces, body = _model()
+    inlet = Group("inlet", [faces[4]])
+    fake = FakeSpaceClaim([body], groups=[inlet])
+    result = _scan(sc, fake, str(tmp_path / "x.scdoc"), mode="inventory")
+    fillet = [g for g in result["inventory"] if g["category"] == "fileto"][0]
+    assert fillet["user_groups"] == ["inlet"]
+    assert inlet.name == "inlet" and not inlet.deleted
+
+
+def test_rescan_replaces_old_inventory_groups_only(sc, tmp_path):
+    faces, body = _model()
+    old = Group("envanter_fileto_R9p00mm", [faces[4]])
+    mark = Group("temizle_vida_D6p00mm_01", [faces[1]])
+    fake = FakeSpaceClaim([body], groups=[old, mark])
+    _scan(sc, fake, str(tmp_path / "x.scdoc"), mode="inventory")
+    assert old.deleted and not mark.deleted

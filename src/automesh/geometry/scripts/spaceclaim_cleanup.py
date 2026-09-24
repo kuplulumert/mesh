@@ -29,8 +29,13 @@ import os
 import traceback
 
 CLEANUP_PREFIX = "temizle_"
+INVENTORY_PREFIX = "envanter_"
 #: Bu onekle baslayan gruplar bizimdir; kullanici grubu sayilmaz.
-OWN_PREFIXES = ("temizle_", "automesh")
+OWN_PREFIXES = ("temizle_", "envanter_", "automesh")
+#: Envanterde "benzer" sayilan olculerin en fazla goreli farki.
+SIMILAR_TOL = 0.05
+#: Envanterde bir kategoride en fazla bu kadar benzerlik grubu.
+MAX_INVENTORY_GROUPS = 60
 
 FULL_TURN = 2.0 * math.pi
 #: Toplam acisi bunun ustundeki es eksenli silindirler "tam" sayilir.
@@ -575,6 +580,117 @@ def name_features(features, max_groups=DEFAULT_MAX_GROUPS):
     return named
 
 
+# ---------------------------------------------------------------- envanter
+
+def inventory_thresholds(diagonal):
+    """Envanter: esik yok gibi - her sey bulunsun, siniflandirma olcuyle.
+
+    Fileto ile kavisli duvar ayrimi icin tek sinir: yaricapi kosegenin
+    %5'inden buyuk kismi silindir fileto degil, yuzeydir.
+    """
+    big = max(diagonal, 1e-6)
+    return {"fillet_max_radius": 0.05 * big,
+            "hole_max_diameter": big,
+            "protrusion_max_size": 0.05 * big,
+            "auto": {"fillet_max_radius": True, "hole_max_diameter": True,
+                     "protrusion_max_size": True}}
+
+
+SURFACE_LABELS = {"Plane": "duzlem", "Cylinder": "silindir", "Cone": "koni",
+                  "Torus": "torus", "Sphere": "kure"}
+
+
+def surface_features(records, claimed):
+    """Hicbir detaya girmeyen yuzler: tiplerine gore."""
+    features = []
+    for record in records:
+        if record["index"] in claimed:
+            continue
+        kind = SURFACE_LABELS.get(record["kind"], "serbest")
+        feature = _feature("yuzey", [record["index"]], 0.0, records) \
+            if record.get("bbox") else {"category": "yuzey",
+                                        "faces": [record["index"]],
+                                        "size": 0.0, "bbox": None,
+                                        "center": (0.0, 0.0, 0.0),
+                                        "extent": 0.0}
+        feature["kind"] = kind
+        features.append(feature)
+    return features
+
+
+def similarity_groups(features, tol=SIMILAR_TOL, max_groups=MAX_INVENTORY_GROUPS):
+    """Ayni kategorideki detaylari olcu benzerligine gore grupla.
+
+    Olcuye gore siralanir; bir oncekinden en fazla ``tol`` oraninda
+    buyuk olan ayni gruba girer (zincir).  Yuzeyler tipe gore gruplanir.
+    """
+    groups = []
+    order = ("fileto", "vida", "cikinti", "yuzey")
+    for category in order:
+        items = [f for f in features if f["category"] == category]
+        if not items:
+            continue
+        if category == "yuzey":
+            by_kind = {}
+            for item in items:
+                by_kind.setdefault(item.get("kind", "serbest"), []).append(item)
+            for kind in sorted(by_kind):
+                groups.append({"category": category, "kind": kind,
+                               "members": by_kind[kind]})
+            continue
+        items.sort(key=lambda f: f["size"])
+        current = [items[0]]
+        for item in items[1:]:
+            previous = current[-1]["size"]
+            if previous > 0 and item["size"] <= previous * (1.0 + tol):
+                current.append(item)
+            else:
+                groups.append({"category": category, "members": current})
+                current = [item]
+        groups.append({"category": category, "members": current})
+
+    # cok fazla grup olursa en buyukler "diger"de birlesir
+    limited = []
+    for category in order:
+        mine = [g for g in groups if g["category"] == category]
+        if len(mine) > max_groups:
+            rest = []
+            for g in mine[max_groups - 1:]:
+                rest.extend(g["members"])
+            mine = mine[:max_groups - 1] + [{"category": category,
+                                             "members": rest, "other": True}]
+        limited.extend(mine)
+
+    out = []
+    for group in limited:
+        sizes = [m["size"] for m in group["members"]]
+        faces = []
+        for m in group["members"]:
+            faces.extend(m["faces"])
+        category = group["category"]
+        size = sorted(sizes)[(len(sizes) - 1) // 2] if sizes else 0.0
+        if category == "yuzey":
+            name = "%syuzey_%s" % (INVENTORY_PREFIX, group["kind"])
+        elif group.get("other"):
+            name = "%s%s_diger" % (INVENTORY_PREFIX, category)
+        else:
+            name = "%s%s_%s" % (INVENTORY_PREFIX, category,
+                                size_token(category, size))
+        out.append({"category": category, "name": name,
+                    "kind": group.get("kind", ""),
+                    "size": size, "size_min": min(sizes) if sizes else 0.0,
+                    "size_max": max(sizes) if sizes else 0.0,
+                    "count": len(group["members"]), "faces": faces})
+    # ayni ada dusen gruplari ayir (yuvarlama cakismasi)
+    seen = {}
+    for group in out:
+        n = seen.get(group["name"], 0)
+        seen[group["name"]] = n + 1
+        if n:
+            group["name"] = "%s_%d" % (group["name"], n + 1)
+    return out
+
+
 def summary(features):
     counts = {"fileto": 0, "vida": 0, "cikinti": 0}
     for feature in features:
@@ -808,8 +924,8 @@ def mark_user_groups(faces, records, diag):
     diag["kullanici_gruplari"] = names
 
 
-def remove_own_groups(diag):
-    """Onceki taramadan kalan temizle_* gruplarini kaldir (sadece bizimkiler)."""
+def remove_own_groups(diag, prefix=CLEANUP_PREFIX):
+    """Onceki taramadan kalan kendi gruplarimizi kaldir (sadece bizimkiler)."""
     removed = 0
     for named_selection in named_selection_list():               # noqa: F821
         try:
@@ -819,7 +935,7 @@ def remove_own_groups(diag):
                 name = str(named_selection.Name)
             except Exception:
                 continue
-        if not name.startswith(CLEANUP_PREFIX):
+        if not name.startswith(prefix):
             continue
         for action in (lambda: named_selection.Delete(),
                        lambda: Delete.Execute(Selection.Create(named_selection))):  # noqa: F821
@@ -899,6 +1015,9 @@ def cleanup_scan(params):
         result["warnings"].append("Mevcut gruplar okunamadi: %s"
                                   % traceback.format_exc().splitlines()[-1])
 
+    if params.get("mode") == "inventory":
+        return _inventory(params, result, faces, records, diagonal, diag)
+
     categories = params.get("categories") or ["fileto", "vida", "cikinti"]
     features = detect_features(records, thresholds, diag, categories)
     kept, skipped = split_protected(features, records)
@@ -963,6 +1082,58 @@ def cleanup_scan(params):
         else:
             result["warnings"].append(
                 "Isaretli kopya diske yazilamadi (%s). Denenenler: %s"
+                % (save_path, " | ".join(errors) or "-"))
+    return result
+
+
+def _inventory(params, result, faces, records, diagonal, diag):
+    """Her seyi siniflandir, benzerleri envanter_* gruplarinda topla."""
+    thresholds = inventory_thresholds(diagonal)
+    result["thresholds"] = thresholds
+    claimed = set()
+    features = []
+    features.extend(find_hole_features(records, thresholds, claimed))
+    features.extend(find_protrusion_features(records, thresholds, claimed, diag))
+    features.extend(find_fillet_features(records, thresholds, claimed))
+    features.extend(surface_features(records, claimed))
+    groups = similarity_groups(features)
+
+    if params.get("create_groups", True):
+        try:
+            remove_own_groups(diag, INVENTORY_PREFIX)
+        except Exception:
+            pass
+    for group in groups:
+        owners = []
+        for index in group["faces"]:
+            for name in records[index].get("groups", []):
+                if name not in owners:
+                    owners.append(name)
+        created, note = False, ""
+        if params.get("create_groups", True):
+            ok, note = create_named_selection(                      # noqa: F821
+                [faces[i] for i in group["faces"]], group["name"])
+            created = bool(ok)
+        result.setdefault("inventory", []).append({
+            "category": group["category"], "name": group["name"],
+            "kind": group["kind"], "size": group["size"],
+            "size_min": group["size_min"], "size_max": group["size_max"],
+            "count": group["count"], "face_count": len(group["faces"]),
+            "user_groups": owners, "created": created, "note": note})
+    counts = {}
+    for group in groups:
+        counts[group["category"]] = counts.get(group["category"], 0) + group["count"]
+    result["summary"] = counts
+    result["features"] = []
+    save_path = params.get("export", "")
+    if save_path:
+        saved, method, errors = save_copy(save_path)
+        diag["kaydetme"] = method
+        if saved:
+            result["saved_path"] = saved
+        else:
+            result["warnings"].append(
+                "Envanter kopyasi diske yazilamadi (%s). Denenenler: %s"
                 % (save_path, " | ".join(errors) or "-"))
     return result
 

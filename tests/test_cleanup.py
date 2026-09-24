@@ -271,7 +271,7 @@ def test_cli_converts_millimetres(monkeypatch, capsys, source):
 
     seen = {}
 
-    def fake_scan(path, cfg, out):
+    def fake_scan(path, cfg, out, **_kw):
         seen["cfg"] = cfg
         return cleanup.report_from_raw(RAW)
 
@@ -297,7 +297,7 @@ def test_cli_rejects_unknown_categories(capsys, source):
 def test_cli_reports_scan_errors_cleanly(monkeypatch, capsys, source):
     from automesh import cli
 
-    def boom(*_a):
+    def boom(*_a, **_k):
         raise GeometryAnalyzerError("SpaceClaim.exe bulunamadı")
 
     monkeypatch.setattr(cleanup, "run_cleanup_scan", boom)
@@ -328,3 +328,47 @@ def test_report_lines_reach_the_log_even_without_setup(tmp_path, source):
     text = "\n".join(lines)
     assert "temizle_fileto_R0p50mm_01" in text
     assert "Kaydetme yöntemi" in text
+
+
+INVENTORY_RAW = dict(RAW, features=[], inventory=[
+    {"category": "fileto", "name": "envanter_fileto_R1p00mm", "kind": "",
+     "size": 0.001, "size_min": 0.001, "size_max": 0.00104, "count": 12,
+     "face_count": 30, "user_groups": [], "created": True},
+    {"category": "yuzey", "name": "envanter_yuzey_duzlem", "kind": "duzlem",
+     "size": 0.0, "size_min": 0.0, "size_max": 0.0, "count": 40,
+     "face_count": 40, "user_groups": ["inlet"], "created": True}],
+    summary={"fileto": 12, "yuzey": 40})
+
+
+def test_inventory_report_lists_similarity_groups():
+    report = cleanup.report_from_raw(INVENTORY_RAW)
+    assert len(report.inventory) == 2
+    text = "\n".join(cleanup.format_inventory(report))
+    assert "envanter_fileto_R1p00mm" in text and "12 adet" in text
+    assert "1 mm - 1.04 mm" in text
+    assert "düzlem" in text and "sizin grubunuz: inlet" in text
+
+
+def test_inventory_mode_reaches_the_script(tmp_path, source):
+    runner, calls = _fake_runner(INVENTORY_RAW)
+    report = cleanup.run_cleanup_scan(str(source), Config(), str(tmp_path / "o"),
+                                      analyzer=FakeAnalyzer(), runner=runner,
+                                      mode="inventory")
+    assert calls["params"]["mode"] == "inventory"
+    assert calls["params"]["export"].endswith("Multicyclone_envanter.scdoc")
+    assert len(report.inventory) == 2
+
+
+def test_cli_inventory_flag(monkeypatch, capsys, source):
+    from automesh import cli
+
+    seen = {}
+
+    def fake_scan(path, cfg, out, **kw):
+        seen.update(kw)
+        return cleanup.report_from_raw(INVENTORY_RAW)
+
+    monkeypatch.setattr(cleanup, "run_cleanup_scan", fake_scan)
+    assert cli.main(["temizle", str(source), "--envanter"]) == 0
+    assert seen["mode"] == "inventory"
+    assert "2 benzerlik grubu" in capsys.readouterr().out
